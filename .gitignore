@@ -1,0 +1,7 @@
+ninery/node_modules/
+ninery/.corepack/
+ninery/.corepack-bin/
+.codex/corepack/
+.codex/bin/
+outputs/
+work/
