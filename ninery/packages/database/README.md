@@ -130,6 +130,34 @@ Key fields:
 
 Growth measurements are append-only historical records. Do not overwrite an existing measurement when a player grows; create a new `GrowthMeasurement` row instead.
 
+### PlayerDNAProfile
+
+`PlayerDNAProfile` stores generated Player DNA snapshots for equipment-relevant recommendation intelligence.
+
+Player DNA profiles are historical records. Do not overwrite an existing profile when PlayerHQ data, growth data, BatMatch answers, or scoring rules change; generate a new profile instead.
+
+Key fields:
+
+- `playerId` - related player
+- `batMatchSessionId` - optional BatMatch session used as an input
+- `version` - Player DNA output shape version
+- `status` - generated or archived
+- normalized scores from 0 to 100 for bat control, swing speed, power potential, contact consistency, physical strength, confidence, transition readiness, growth stability, equipment awareness, and profile completeness
+- categorical outputs for swing feel, development stage, primary hitting goal, growth status, and confidence band
+- `scoringRuleVersion` - deterministic scoring-rule registry version
+- `inputSnapshot` - JSON snapshot of the inputs used to generate the profile
+- `scoreBreakdown` - JSON explanation data with applied rules, source codes, and adjustments
+- `generatedAt` - time the profile was generated
+
+Player DNA describes equipment-relevant characteristics and current development needs. It is not a medical assessment, scouting grade, or permanent label of the player.
+
+When Ticket #013 schema changes are ready to sync to local Supabase, run:
+
+```bash
+pnpm --filter @ninery/database exec prisma db push --schema=./prisma/schema.prisma
+pnpm --filter @ninery/database prisma:generate
+```
+
 ## Equipment Catalog Models
 
 ### Equipment
@@ -196,6 +224,104 @@ Key fields:
 - `confidence` - `low`, `medium`, `high`, or `validated`
 - `evidenceLevel` - `internal_review`, `manufacturer_specs`, `field_testing`, or `validated_outcomes`
 - `rationale` - optional explanation
+
+## Equipment Intelligence Expansion
+
+Equipment intelligence is organized into four layers:
+
+1. Catalog facts - `Equipment`, `EquipmentVariant`, and `EquipmentSpecification`
+2. DNA scoring - `EquipmentDNAProfile`, `EquipmentDNAScore`, and `EquipmentCharacteristic`
+3. Evidence and fit intelligence - `EquipmentEvidence`, `EquipmentFitProfile`, and `EquipmentPersonality`
+4. Comparison intelligence - `EquipmentComparison`
+
+### EquipmentSpecification
+
+`EquipmentSpecification` stores structured product facts for an existing equipment model.
+
+Examples include barrel diameter, connection type, grip style, warranty terms, or other facts that should be queryable without adding one-off columns to `Equipment`.
+
+Ownership rules:
+
+- belongs to `Equipment`
+- uses `specificationCode` as the stable fact key
+- stores either text or numeric values, plus optional unit and source
+- uses `verifiedAt` when a fact has been checked against a trusted source
+
+There is one canonical specification row per equipment/specification code. If multiple sources disagree, resolve the canonical value and preserve supporting source detail in `EquipmentEvidence`.
+
+### EquipmentEvidence
+
+`EquipmentEvidence` stores the source material behind equipment intelligence decisions.
+
+Evidence can attach to:
+
+- `Equipment` for model-level claims
+- `EquipmentDNAProfile` for profile-level support
+- `EquipmentDNAScore` for score-level support
+
+This lets a DNA score link directly to the manufacturer spec, internal review, field test, user feedback, performance data, or validated outcome that supports it.
+
+Publishing rules:
+
+- collect evidence first with `status = collected`
+- move to `in_review` while a reviewer checks reliability
+- use `approved` evidence for published DNA profiles and fit outputs
+- keep rejected or archived evidence for auditability instead of deleting it during normal review
+
+### EquipmentFitProfile
+
+`EquipmentFitProfile` connects a published DNA profile to structured fit signals.
+
+Supported fit types:
+
+- `player_stage`
+- `swing_profile`
+- `opportunity_profile`
+- `preference`
+- `transition`
+
+Strength is an application-enforced 1 to 5 value. Prisma does not define a database check constraint in the schema file, so application code and any SQL migration checks should preserve that rule.
+
+Fit profiles belong to an equipment model and a DNA profile. They should be regenerated as new versions when the fit logic changes.
+
+### EquipmentPersonality
+
+`EquipmentPersonality` stores derived equipment archetypes, such as balanced confidence builder, power-first barrel, or transition-friendly BBCOR option.
+
+Ownership rules:
+
+- belongs to `Equipment`
+- belongs to the DNA profile used for derivation
+- stores `derivationVersion` so personality outputs remain reproducible
+- allows one or more personality rows, with `isPrimary` marking the leading personality for display
+
+### EquipmentComparison
+
+`EquipmentComparison` stores directional comparisons between two existing equipment models.
+
+It records:
+
+- a similarity score
+- shared strengths as JSON
+- primary differences as JSON
+- optional best-fit summaries for each side
+- confidence and version metadata
+
+Comparisons should explain both why two items are similar and why a family might choose one over the other.
+
+### Model-Level Versus Variant-Level Scoring
+
+Current DNA, evidence, fit, personality, and comparison records are model-level and attach to `Equipment`.
+
+`EquipmentVariant` remains the purchasable size/SKU layer. Variant-level scoring should only be added when Ninery needs intelligence that truly changes by length, weight, drop, or SKU. Until then, model-level scoring prevents duplicate DNA profiles across equivalent variants.
+
+### Publishing Rules
+
+- Draft DNA profiles may be edited freely.
+- Active DNA profiles should rely on approved or high-reliability evidence.
+- Published fit profiles and personalities should reference the DNA profile version that produced them.
+- Do not overwrite historical published outputs when scoring logic changes; create new versions.
+- Evidence records should remain available for audit and should not be removed merely because an interpretation changed.
 
 Seed equipment characteristics with:
 
@@ -409,6 +535,12 @@ pnpm prisma format
 pnpm prisma generate
 pnpm prisma migrate dev
 pnpm seed
+```
+
+When creating the development migration for the equipment intelligence expansion, run:
+
+```bash
+pnpm --filter @ninery/database prisma:migrate:dev -- --name add_equipment_intelligence_schema
 ```
 
 For quick demo setup:

@@ -19,20 +19,23 @@
     "build": "tsc -p tsconfig.json",
     "lint": "tsc -p tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prisma:validate": "prisma validate --schema=./prisma/schema.prisma",
     "prisma:generate": "prisma generate --schema=./prisma/schema.prisma",
+    "prisma:db:push": "prisma db push --schema=./prisma/schema.prisma",
     "prisma:migrate:dev": "prisma migrate dev --schema=./prisma/schema.prisma",
     "prisma:studio": "prisma studio --schema=./prisma/schema.prisma",
-    "seed": "node prisma/seeds/index.ts",
-    "seed:clear": "node prisma/seeds/index.ts clear",
-    "seed:demo": "node prisma/seeds/index.ts demo",
-    "seed:reference": "node prisma/seeds/index.ts reference",
-    "seed:equipment": "node prisma/seeds/index.ts equipment",
+    "seed": "tsx prisma/seeds/index.ts",
+    "seed:clear": "tsx prisma/seeds/index.ts clear",
+    "seed:demo": "tsx prisma/seeds/index.ts demo",
+    "seed:reference": "tsx prisma/seeds/index.ts reference",
+    "seed:equipment": "tsx prisma/seeds/index.ts equipment",
     "clean": "rimraf dist"
   },
   "dependencies": {
     "@prisma/client": "^6.1.0"
   },
   "devDependencies": {
-    "prisma": "^6.1.0"
+    "prisma": "^6.1.0",
+    "tsx": "^4.19.2"
   }
 }

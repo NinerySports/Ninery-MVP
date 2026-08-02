@@ -6,3 +6,4 @@ dist
 .corepack-bin
 .env
 *.log
+*.tsbuildinfo

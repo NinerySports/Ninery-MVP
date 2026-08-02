@@ -1,0 +1,948 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum FamilyMemberRole {
+  owner
+  guardian
+  viewer
+}
+
+enum Sport {
+  baseball
+  softball
+}
+
+enum PlayerStatus {
+  active
+  archived
+}
+
+enum Handedness {
+  left
+  right
+}
+
+enum BattingSide {
+  left
+  right
+  switch
+}
+
+enum CompetitionLevel {
+  recreational
+  school
+  travel
+  elite
+  unknown
+}
+
+enum EquipmentCategory {
+  bat
+  glove
+  cleat
+  helmet
+  catcher_gear
+}
+
+enum EquipmentStatus {
+  active
+  coming_soon
+  legacy
+  archived
+}
+
+enum EquipmentCertification {
+  USA
+  USSSA
+  BBCOR
+  none
+  unknown
+}
+
+enum CertificationLevel {
+  bronze
+  silver
+  gold
+  platinum
+}
+
+enum DNAProfileStatus {
+  draft
+  active
+  archived
+}
+
+enum EvidenceLevel {
+  internal_review
+  manufacturer_specs
+  field_testing
+  validated_outcomes
+}
+
+enum ConfidenceLevel {
+  low
+  medium
+  high
+  validated
+}
+
+enum EvidenceType {
+  manufacturer_specs
+  internal_review
+  third_party_review
+  field_testing
+  user_feedback
+  performance_data
+  validated_outcomes
+}
+
+enum EvidenceReliability {
+  low
+  medium
+  high
+  verified
+}
+
+enum EvidenceStatus {
+  collected
+  in_review
+  approved
+  rejected
+  archived
+}
+
+enum EquipmentFitType {
+  player_stage
+  swing_profile
+  opportunity_profile
+  preference
+  transition
+}
+
+enum ComparisonConfidence {
+  low
+  medium
+  high
+  validated
+}
+
+enum PlayerDNAProfileStatus {
+  generated
+  archived
+}
+
+enum PreferredSwingFeel {
+  light
+  balanced
+  slightly_end_loaded
+  end_loaded
+  unknown
+}
+
+enum DevelopmentStage {
+  foundation
+  developing
+  competitive
+  performance
+  advanced
+}
+
+enum PrimaryHittingGoal {
+  improve_contact
+  improve_power
+  improve_bat_control
+  increase_swing_speed
+  build_confidence
+  prepare_for_transition
+  maintain_current_fit
+  unknown
+}
+
+enum GrowthStatus {
+  stable
+  moderate_growth
+  rapid_growth
+  insufficient_data
+}
+
+enum ProfileConfidenceLevel {
+  low
+  medium
+  high
+  validated
+}
+
+enum PlayerTimelineEventType {
+  player_created
+  profile_updated
+  growth_measurement_added
+  equipment_added
+  batmatch_started
+  batmatch_completed
+  player_dna_generated
+  recommendation_generated
+  decision_book_created
+  outcome_recorded
+  milestone_added
+}
+
+enum PlatformEventType {
+  user_registered
+  family_created
+  player_created
+  player_profile_updated
+  growth_measurement_added
+  equipment_created
+  equipment_dna_published
+  batmatch_started
+  batmatch_answer_submitted
+  batmatch_completed
+  player_dna_generated
+  recommendation_generated
+  decision_book_created
+  decision_book_shared
+  ai_response_generated
+  outcome_recorded
+}
+
+enum ReferenceDataType {
+  manufacturer
+  position
+  competition_level
+  certification
+  equipment_category
+  development_stage
+}
+
+model User {
+  id            String   @id @default(uuid()) @db.Uuid
+  email         String   @unique
+  passwordHash  String
+  emailVerified Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  createdFamilies Family[]       @relation("FamilyCreator")
+  memberships     FamilyMember[]
+
+  @@map("users")
+}
+
+model Family {
+  id              String   @id @default(uuid()) @db.Uuid
+  name            String
+  createdByUserId String   @db.Uuid
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  createdByUser User           @relation("FamilyCreator", fields: [createdByUserId], references: [id], onDelete: Cascade)
+  members       FamilyMember[]
+  players       Player[]
+
+  @@index([createdByUserId])
+  @@map("families")
+}
+
+model FamilyMember {
+  id        String           @id @default(uuid()) @db.Uuid
+  familyId  String           @db.Uuid
+  userId    String           @db.Uuid
+  role      FamilyMemberRole
+  createdAt DateTime         @default(now())
+
+  family Family @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([familyId, userId])
+  @@index([familyId])
+  @@index([userId])
+  @@map("family_members")
+}
+
+model Player {
+  id             String       @id @default(uuid()) @db.Uuid
+  familyId       String       @db.Uuid
+  firstName      String
+  lastName       String
+  nickname       String?
+  dateOfBirth    DateTime?
+  graduationYear Int?
+  sport          Sport
+  photoUrl       String?
+  status         PlayerStatus @default(active)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  family              Family                     @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  profile             PlayerProfile?
+  growthMeasurements  GrowthMeasurement[]
+  batMatchSessions    BatMatchSession[]
+  decisionSignals     DecisionSignal[]
+  recommendations     Recommendation[]
+  opportunityProfiles PlayerOpportunityProfile[]
+  decisionBooks       DecisionBook[]
+  timelineEvents      PlayerTimelineEvent[]
+  dnaProfiles         PlayerDNAProfile[]
+
+  @@index([familyId])
+  @@index([graduationYear])
+  @@index([status])
+  @@map("players")
+}
+
+model PlayerProfile {
+  id                String           @id @default(uuid()) @db.Uuid
+  playerId          String           @unique @db.Uuid
+  throwingHand      Handedness?
+  battingSide       BattingSide?
+  primaryPosition   String?
+  secondaryPosition String?
+  competitionLevel  CompetitionLevel @default(unknown)
+  teamName          String?
+  practiceFrequency String?
+  experienceYears   Int?
+  updatedAt         DateTime         @updatedAt
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@index([playerId])
+  @@map("player_profiles")
+}
+
+model GrowthMeasurement {
+  id         String   @id @default(uuid()) @db.Uuid
+  playerId   String   @db.Uuid
+  heightCm   Decimal? @db.Decimal(5, 2)
+  weightKg   Decimal? @db.Decimal(5, 2)
+  measuredAt DateTime
+  source     String?
+  confidence Decimal? @db.Decimal(5, 4)
+  createdAt  DateTime @default(now())
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@index([playerId])
+  @@index([measuredAt])
+  @@map("growth_measurements")
+}
+
+model Equipment {
+  id             String                 @id @default(uuid()) @db.Uuid
+  manufacturer   String
+  model          String
+  modelYear      Int?
+  category       EquipmentCategory
+  certification  EquipmentCertification @default(unknown)
+  material       String?
+  construction   String?
+  barrelDiameter Decimal?               @db.Decimal(4, 2)
+  status         EquipmentStatus        @default(active)
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  variants            EquipmentVariant[]
+  dnaProfiles         EquipmentDNAProfile[]
+  specifications      EquipmentSpecification[]
+  evidence            EquipmentEvidence[]
+  fitProfiles         EquipmentFitProfile[]
+  personalities       EquipmentPersonality[]
+  sourceComparisons   EquipmentComparison[]    @relation("SourceEquipmentComparison")
+  targetComparisons   EquipmentComparison[]    @relation("TargetEquipmentComparison")
+  recommendationItems RecommendationItem[]
+
+  @@index([manufacturer])
+  @@index([model])
+  @@index([modelYear])
+  @@index([category])
+  @@index([certification])
+  @@index([status])
+  @@map("equipment")
+}
+
+model EquipmentVariant {
+  id           String   @id @default(uuid()) @db.Uuid
+  equipmentId  String   @db.Uuid
+  lengthInches Decimal? @db.Decimal(4, 1)
+  weightOunces Decimal? @db.Decimal(4, 1)
+  dropWeight   Int?
+  msrp         Decimal? @db.Decimal(8, 2)
+  sku          String?  @unique
+  createdAt    DateTime @default(now())
+
+  equipment           Equipment            @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  recommendationItems RecommendationItem[]
+
+  @@index([equipmentId])
+  @@map("equipment_variants")
+}
+
+model EquipmentCharacteristic {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  name        String
+  category    String
+  description String?
+  version     Int      @default(1)
+  createdAt   DateTime @default(now())
+
+  scores EquipmentDNAScore[]
+
+  @@map("equipment_characteristics")
+}
+
+model EquipmentDNAProfile {
+  id                 String             @id @default(uuid()) @db.Uuid
+  equipmentId        String             @db.Uuid
+  version            Int                @default(1)
+  certificationLevel CertificationLevel
+  confidenceScore    ConfidenceLevel    @default(medium)
+  status             DNAProfileStatus   @default(draft)
+  createdAt          DateTime           @default(now())
+  publishedAt        DateTime?
+
+  equipment     Equipment              @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  scores        EquipmentDNAScore[]
+  evidence      EquipmentEvidence[]
+  fits          EquipmentFitProfile[]
+  personalities EquipmentPersonality[]
+
+  @@index([equipmentId])
+  @@index([status])
+  @@map("equipment_dna_profiles")
+}
+
+model EquipmentDNAScore {
+  id               String          @id @default(uuid()) @db.Uuid
+  dnaProfileId     String          @db.Uuid
+  characteristicId String          @db.Uuid
+  score            Decimal         @db.Decimal(5, 2)
+  confidence       ConfidenceLevel
+  rationale        String?
+  evidenceLevel    EvidenceLevel
+  createdAt        DateTime        @default(now())
+
+  dnaProfile     EquipmentDNAProfile     @relation(fields: [dnaProfileId], references: [id], onDelete: Cascade)
+  characteristic EquipmentCharacteristic @relation(fields: [characteristicId], references: [id], onDelete: Cascade)
+  evidence       EquipmentEvidence[]
+
+  @@unique([dnaProfileId, characteristicId])
+  @@index([dnaProfileId])
+  @@index([characteristicId])
+  @@map("equipment_dna_scores")
+}
+
+model EquipmentSpecification {
+  id                String    @id @default(uuid()) @db.Uuid
+  equipmentId       String    @db.Uuid
+  specificationCode String
+  valueText         String?
+  valueNumber       Decimal?  @db.Decimal(12, 4)
+  unit              String?
+  source            String?
+  verifiedAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  equipment Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+
+  @@unique([equipmentId, specificationCode])
+  @@index([equipmentId])
+  @@index([specificationCode])
+  @@index([verifiedAt])
+  @@map("equipment_specifications")
+}
+
+model EquipmentEvidence {
+  id              String              @id @default(uuid()) @db.Uuid
+  equipmentId     String              @db.Uuid
+  dnaProfileId    String?             @db.Uuid
+  dnaScoreId      String?             @db.Uuid
+  evidenceType    EvidenceType
+  title           String
+  summary         String
+  sourceReference String?
+  reliability     EvidenceReliability
+  status          EvidenceStatus      @default(collected)
+  collectedAt     DateTime?
+  reviewedAt      DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  equipment  Equipment            @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  dnaProfile EquipmentDNAProfile? @relation(fields: [dnaProfileId], references: [id], onDelete: SetNull)
+  dnaScore   EquipmentDNAScore?   @relation(fields: [dnaScoreId], references: [id], onDelete: SetNull)
+
+  @@index([equipmentId])
+  @@index([dnaProfileId])
+  @@index([dnaScoreId])
+  @@index([evidenceType])
+  @@index([reliability])
+  @@index([status])
+  @@index([collectedAt])
+  @@map("equipment_evidence")
+}
+
+model EquipmentFitProfile {
+  id           String           @id @default(uuid()) @db.Uuid
+  equipmentId  String           @db.Uuid
+  dnaProfileId String           @db.Uuid
+  fitType      EquipmentFitType
+  fitCode      String
+  strength     Int
+  confidence   ConfidenceLevel
+  rationale    String
+  version      Int              @default(1)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  equipment  Equipment           @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  dnaProfile EquipmentDNAProfile @relation(fields: [dnaProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([dnaProfileId, fitType, fitCode, version])
+  @@index([equipmentId])
+  @@index([dnaProfileId])
+  @@index([fitType])
+  @@index([fitCode])
+  @@index([confidence])
+  @@map("equipment_fit_profiles")
+}
+
+model EquipmentPersonality {
+  id                String          @id @default(uuid()) @db.Uuid
+  equipmentId       String          @db.Uuid
+  dnaProfileId      String          @db.Uuid
+  personalityCode   String
+  personalityName   String
+  isPrimary         Boolean         @default(false)
+  confidence        ConfidenceLevel
+  derivationVersion String
+  rationale         String
+  createdAt         DateTime        @default(now())
+
+  equipment  Equipment           @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  dnaProfile EquipmentDNAProfile @relation(fields: [dnaProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([dnaProfileId, personalityCode, derivationVersion])
+  @@index([equipmentId])
+  @@index([dnaProfileId])
+  @@index([personalityCode])
+  @@index([isPrimary])
+  @@index([confidence])
+  @@map("equipment_personalities")
+}
+
+model EquipmentComparison {
+  id                 String               @id @default(uuid()) @db.Uuid
+  sourceEquipmentId  String               @db.Uuid
+  targetEquipmentId  String               @db.Uuid
+  similarityScore    Decimal              @db.Decimal(5, 4)
+  sharedStrengths    Json
+  primaryDifferences Json
+  sourceBestFor      String?
+  targetBestFor      String?
+  confidence         ComparisonConfidence
+  version            Int                  @default(1)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  sourceEquipment Equipment @relation("SourceEquipmentComparison", fields: [sourceEquipmentId], references: [id], onDelete: Cascade)
+  targetEquipment Equipment @relation("TargetEquipmentComparison", fields: [targetEquipmentId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceEquipmentId, targetEquipmentId, version])
+  @@index([sourceEquipmentId])
+  @@index([targetEquipmentId])
+  @@index([similarityScore])
+  @@index([confidence])
+  @@map("equipment_comparisons")
+}
+
+enum BatMatchSessionStatus {
+  started
+  completed
+  abandoned
+}
+
+enum BatMatchSessionType {
+  first_batmatch
+  follow_up
+  growth_review
+  annual_review
+}
+
+enum BatMatchSection {
+  player_goals
+  current_equipment
+  swing_feel
+  performance_confidence
+  development_growth
+  preferences
+}
+
+enum AnswerType {
+  single_select
+  multi_select
+  text
+  number
+  boolean
+  scale
+}
+
+model BatMatchSession {
+  id              String                @id @default(uuid()) @db.Uuid
+  playerId        String                @db.Uuid
+  status          BatMatchSessionStatus @default(started)
+  type            BatMatchSessionType   @default(first_batmatch)
+  version         Int                   @default(1)
+  confidenceScore Decimal?              @db.Decimal(5, 4)
+  startedAt       DateTime              @default(now())
+  completedAt     DateTime?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  player            Player             @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  answers           BatMatchAnswer[]
+  decisionSignals   DecisionSignal[]
+  recommendations   Recommendation[]
+  playerDNAProfiles PlayerDNAProfile[]
+
+  @@index([playerId])
+  @@index([status])
+  @@index([type])
+  @@map("bat_match_sessions")
+}
+
+model PlayerDNAProfile {
+  id                         String                 @id @default(uuid()) @db.Uuid
+  playerId                   String                 @db.Uuid
+  batMatchSessionId          String?                @db.Uuid
+  version                    String
+  status                     PlayerDNAProfileStatus @default(generated)
+  batControl                 Decimal                @db.Decimal(5, 2)
+  swingSpeed                 Decimal                @db.Decimal(5, 2)
+  powerPotential             Decimal                @db.Decimal(5, 2)
+  contactConsistency         Decimal                @db.Decimal(5, 2)
+  physicalStrength           Decimal                @db.Decimal(5, 2)
+  confidence                 Decimal                @db.Decimal(5, 2)
+  transitionReadiness        Decimal                @db.Decimal(5, 2)
+  growthStability            Decimal                @db.Decimal(5, 2)
+  equipmentAwareness         Decimal                @db.Decimal(5, 2)
+  profileCompleteness        Decimal                @db.Decimal(5, 2)
+  preferredSwingFeel         PreferredSwingFeel     @default(unknown)
+  developmentStage           DevelopmentStage
+  primaryHittingGoal         PrimaryHittingGoal     @default(unknown)
+  currentEquipmentAssessment String?
+  growthStatus               GrowthStatus           @default(insufficient_data)
+  profileConfidenceLevel     ProfileConfidenceLevel
+  scoringRuleVersion         String
+  inputHash                  String
+  regenerationReason         String?
+  inputSnapshot              Json
+  scoreBreakdown             Json
+  generatedAt                DateTime               @default(now())
+  createdAt                  DateTime               @default(now())
+  updatedAt                  DateTime               @updatedAt
+
+  player          Player           @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  batMatchSession BatMatchSession? @relation(fields: [batMatchSessionId], references: [id], onDelete: SetNull)
+  recommendations Recommendation[]
+
+  @@index([playerId])
+  @@index([batMatchSessionId])
+  @@index([generatedAt])
+  @@index([status])
+  @@index([scoringRuleVersion])
+  @@index([inputHash])
+  @@map("player_dna_profiles")
+}
+
+model BatMatchQuestion {
+  id               String          @id @default(uuid()) @db.Uuid
+  code             String          @unique
+  section          BatMatchSection
+  questionText     String
+  helperText       String?
+  answerType       AnswerType
+  options          Json?
+  required         Boolean         @default(true)
+  confidenceWeight Decimal         @default(1.0) @db.Decimal(5, 4)
+  version          Int             @default(1)
+  active           Boolean         @default(true)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  answers BatMatchAnswer[]
+
+  @@index([section])
+  @@index([active])
+  @@map("bat_match_questions")
+}
+
+model BatMatchAnswer {
+  id         String   @id @default(uuid()) @db.Uuid
+  sessionId  String   @db.Uuid
+  questionId String   @db.Uuid
+  answer     Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  session         BatMatchSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  question        BatMatchQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  decisionSignals DecisionSignal[]
+
+  @@unique([sessionId, questionId])
+  @@index([sessionId])
+  @@index([questionId])
+  @@map("bat_match_answers")
+}
+
+model DecisionSignal {
+  id             String   @id @default(uuid()) @db.Uuid
+  sessionId      String   @db.Uuid
+  playerId       String   @db.Uuid
+  signalCode     String
+  signalName     String
+  confidence     Decimal  @db.Decimal(5, 4)
+  sourceAnswerId String?  @db.Uuid
+  createdAt      DateTime @default(now())
+
+  session      BatMatchSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  player       Player          @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  sourceAnswer BatMatchAnswer? @relation(fields: [sourceAnswerId], references: [id], onDelete: SetNull)
+
+  @@index([sessionId])
+  @@index([playerId])
+  @@index([signalCode])
+  @@map("decision_signals")
+}
+
+enum RecommendationStatus {
+  draft
+  generated
+  accepted
+  dismissed
+  archived
+}
+
+enum DecisionBookStatus {
+  draft
+  generated
+  shared
+  archived
+}
+
+enum DecisionBookSectionType {
+  cover
+  executive_summary
+  about_player
+  what_we_learned
+  opportunity_profiles
+  equipment_readiness
+  recommended_equipment
+  why_this_recommendation
+  equipment_dna
+  tradeoffs
+  alternatives
+  development_roadmap
+  next_steps
+  ai_assistant
+}
+
+model Recommendation {
+  id                       String               @id @default(uuid()) @db.Uuid
+  playerId                 String               @db.Uuid
+  batMatchSessionId        String?              @db.Uuid
+  playerDNAProfileId       String?              @db.Uuid
+  status                   RecommendationStatus @default(draft)
+  overallConfidence        Decimal?             @db.Decimal(5, 4)
+  recommendationConfidence Decimal?             @db.Decimal(5, 2)
+  generatedAt              DateTime             @default(now())
+  decisionMatrixVersion    String
+  equipmentDnaVersion      String
+  knowledgeGraphVersion    String
+  inputHash                String?
+  inputSnapshot            Json?
+  scoreBreakdown           Json?
+  recommendationTrace      Json?
+  createdAt                DateTime             @default(now())
+  updatedAt                DateTime             @updatedAt
+
+  player              Player                     @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  batMatchSession     BatMatchSession?           @relation(fields: [batMatchSessionId], references: [id], onDelete: SetNull)
+  playerDNAProfile    PlayerDNAProfile?          @relation(fields: [playerDNAProfileId], references: [id], onDelete: SetNull)
+  items               RecommendationItem[]
+  opportunityProfiles PlayerOpportunityProfile[]
+  decisionBook        DecisionBook?
+
+  @@index([playerId])
+  @@index([batMatchSessionId])
+  @@index([playerDNAProfileId])
+  @@index([status])
+  @@index([generatedAt])
+  @@index([inputHash])
+  @@map("recommendations")
+}
+
+model RecommendationItem {
+  id                       String   @id @default(uuid()) @db.Uuid
+  recommendationId         String   @db.Uuid
+  equipmentId              String   @db.Uuid
+  rank                     Int
+  matchScore               Decimal  @db.Decimal(8, 4)
+  equipmentReadinessScore  Decimal? @db.Decimal(8, 4)
+  recommendationConfidence Decimal  @db.Decimal(5, 4)
+  matchBand                String?
+  confidenceBand           String?
+  reasonSummary            String?
+  explanationSummary       String?
+  scoreBreakdown           Json?
+  recommendationTrace      Json?
+  eligibilityStatus        Json?
+  tradeoffs                Json?
+  createdAt                DateTime @default(now())
+
+  recommendation     Recommendation    @relation(fields: [recommendationId], references: [id], onDelete: Cascade)
+  equipment          Equipment         @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  equipmentVariant   EquipmentVariant? @relation(fields: [equipmentVariantId], references: [id])
+  equipmentVariantId String?           @db.Uuid
+
+  @@unique([recommendationId, rank])
+  @@index([recommendationId])
+  @@index([equipmentId])
+  @@index([rank])
+  @@map("recommendation_items")
+}
+
+model OpportunityProfile {
+  id              String   @id @default(uuid()) @db.Uuid
+  code            String   @unique
+  name            String
+  description     String?
+  version         Int      @default(1)
+  active          Boolean  @default(true)
+  defaultPriority Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  playerProfiles PlayerOpportunityProfile[]
+
+  @@index([active])
+  @@map("opportunity_profiles")
+}
+
+model PlayerOpportunityProfile {
+  id                   String   @id @default(uuid()) @db.Uuid
+  playerId             String   @db.Uuid
+  recommendationId     String?  @db.Uuid
+  opportunityProfileId String   @db.Uuid
+  priorityScore        Decimal  @db.Decimal(8, 4)
+  confidence           Decimal  @db.Decimal(5, 4)
+  createdAt            DateTime @default(now())
+
+  player             Player             @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  recommendation     Recommendation?    @relation(fields: [recommendationId], references: [id], onDelete: SetNull)
+  opportunityProfile OpportunityProfile @relation(fields: [opportunityProfileId], references: [id], onDelete: Cascade)
+
+  @@index([playerId])
+  @@index([recommendationId])
+  @@index([opportunityProfileId])
+  @@map("player_opportunity_profiles")
+}
+
+model DecisionBook {
+  id               String             @id @default(uuid()) @db.Uuid
+  recommendationId String             @unique @db.Uuid
+  playerId         String             @db.Uuid
+  title            String
+  version          Int                @default(1)
+  status           DecisionBookStatus @default(draft)
+  webUrl           String?
+  pdfUrl           String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  recommendation Recommendation        @relation(fields: [recommendationId], references: [id], onDelete: Cascade)
+  player         Player                @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  sections       DecisionBookSection[]
+
+  @@index([recommendationId])
+  @@index([playerId])
+  @@index([status])
+  @@map("decision_books")
+}
+
+model DecisionBookSection {
+  id             String                  @id @default(uuid()) @db.Uuid
+  decisionBookId String                  @db.Uuid
+  sectionType    DecisionBookSectionType
+  title          String
+  content        Json
+  sortOrder      Int                     @default(0)
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+
+  decisionBook DecisionBook @relation(fields: [decisionBookId], references: [id], onDelete: Cascade)
+
+  @@index([decisionBookId])
+  @@index([sortOrder])
+  @@map("decision_book_sections")
+}
+
+model PlayerTimelineEvent {
+  id                String                  @id @default(uuid()) @db.Uuid
+  playerId          String                  @db.Uuid
+  eventType         PlayerTimelineEventType
+  title             String
+  description       String?
+  eventDate         DateTime
+  relatedEntityType String?
+  relatedEntityId   String?                 @db.Uuid
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@index([playerId])
+  @@index([eventType])
+  @@index([eventDate])
+  @@index([relatedEntityType])
+  @@map("player_timeline_events")
+}
+
+model PlatformEvent {
+  id         String            @id @default(uuid()) @db.Uuid
+  eventType  PlatformEventType
+  entityType String
+  entityId   String?           @db.Uuid
+  payload    Json?
+  createdAt  DateTime          @default(now())
+
+  @@index([eventType])
+  @@index([entityType])
+  @@index([entityId])
+  @@index([createdAt])
+  @@map("platform_events")
+}
+
+model ReferenceData {
+  id          String            @id @default(uuid()) @db.Uuid
+  type        ReferenceDataType
+  code        String
+  name        String
+  description String?
+  sortOrder   Int               @default(0)
+  active      Boolean           @default(true)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@unique([type, code])
+  @@index([type])
+  @@index([active])
+  @@map("reference_data")
+}
+

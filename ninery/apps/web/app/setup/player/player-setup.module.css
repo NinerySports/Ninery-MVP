@@ -1,0 +1,322 @@
+.page {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 16% 0%, rgba(214, 170, 78, 0.24), transparent 27rem),
+    linear-gradient(145deg, #07152a 0%, #0b1d38 54%, #f8fafc 54.1%, #ffffff 100%);
+  color: #ffffff;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.shell {
+  width: min(1120px, calc(100% - 40px));
+  margin: 0 auto;
+  padding: 26px 0 72px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  color: #ffffff;
+  font-size: 1.1rem;
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.logo span {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 50%;
+  background: #d6aa4e;
+  color: #07152a;
+  font-weight: 900;
+}
+
+.header p,
+.kicker {
+  margin: 0;
+  color: #d6aa4e;
+  font-size: 0.8rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.hero {
+  max-width: 760px;
+  padding: 62px 0 30px;
+}
+
+.hero h1 {
+  margin: 14px 0 0;
+  font-size: clamp(2.5rem, 6vw, 4.8rem);
+  line-height: 0.98;
+  letter-spacing: 0;
+}
+
+.progress,
+.card {
+  border: 1px solid rgba(7, 21, 42, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 24px 70px rgba(7, 21, 42, 0.16);
+  color: #07152a;
+}
+
+.progress {
+  padding: 22px;
+}
+
+.progressHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: #42516a;
+}
+
+.progressHeader span {
+  font-weight: 750;
+}
+
+.progressHeader strong {
+  color: #07152a;
+  font-size: 1.05rem;
+}
+
+.track {
+  height: 9px;
+  margin-top: 18px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e6ebf2;
+}
+
+.track div {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #d6aa4e, #f2d486);
+  transition: width 220ms ease;
+}
+
+.stepList {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stepList li {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  color: #64748b;
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.stepList span {
+  display: grid;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 50%;
+  background: #e6ebf2;
+  color: #42516a;
+  font-size: 0.82rem;
+}
+
+.activeStep {
+  color: #07152a !important;
+}
+
+.activeStep span {
+  background: #07152a;
+  color: #d6aa4e;
+}
+
+.card {
+  margin-top: 22px;
+  padding: 34px;
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.field {
+  display: grid;
+  gap: 9px;
+  color: #07152a;
+  font-weight: 800;
+}
+
+.field span {
+  font-size: 0.92rem;
+}
+
+.field input,
+.field select {
+  width: 100%;
+  min-height: 56px;
+  border: 1px solid #d7deea;
+  border-radius: 8px;
+  padding: 0 16px;
+  background: #ffffff;
+  color: #07152a;
+  font: inherit;
+  font-weight: 650;
+  outline: none;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.field input:focus,
+.field select:focus {
+  border-color: #d6aa4e;
+  box-shadow: 0 0 0 4px rgba(214, 170, 78, 0.18);
+}
+
+.goalGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.goalOption {
+  display: flex;
+  min-height: 68px;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid #d7deea;
+  border-radius: 8px;
+  padding: 16px;
+  color: #07152a;
+  font-weight: 800;
+}
+
+.goalOption input {
+  width: 20px;
+  height: 20px;
+  accent-color: #d6aa4e;
+}
+
+.reviewGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.reviewItem {
+  min-height: 92px;
+  border: 1px solid #e0e6ef;
+  border-radius: 8px;
+  padding: 16px;
+  background: #f8fafc;
+}
+
+.reviewItem span {
+  display: block;
+  color: #64748b;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.reviewItem strong {
+  display: block;
+  margin-top: 8px;
+  color: #07152a;
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+.actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 34px;
+}
+
+.actions button {
+  min-height: 50px;
+  min-width: 132px;
+  border: 1px solid #d7deea;
+  border-radius: 8px;
+  padding: 0 22px;
+  background: #ffffff;
+  color: #07152a;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 850;
+}
+
+.actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.primaryButton {
+  border-color: #d6aa4e !important;
+  background: #d6aa4e !important;
+  color: #07152a !important;
+}
+
+@media (max-width: 920px) {
+  .stepList,
+  .formGrid,
+  .goalGrid,
+  .reviewGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .stepList li {
+    min-height: 34px;
+  }
+}
+
+@media (max-width: 560px) {
+  .shell {
+    width: min(100% - 28px, 1120px);
+    padding-bottom: 48px;
+  }
+
+  .header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .hero {
+    padding-top: 42px;
+  }
+
+  .card,
+  .progress {
+    padding: 22px;
+  }
+
+  .progressHeader,
+  .actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .actions button {
+    width: 100%;
+  }
+}

@@ -18,6 +18,7 @@ export async function seed() {
         where: { id: player.id },
         data: {
           nickname: "Jack",
+          dateOfBirth: new Date("2015-04-15T12:00:00.000Z"),
           sport: "baseball",
           status: "active"
         }
@@ -28,6 +29,7 @@ export async function seed() {
           firstName: "Jackson",
           lastName: "Sanders",
           nickname: "Jack",
+          dateOfBirth: new Date("2015-04-15T12:00:00.000Z"),
           graduationYear: 2033,
           sport: "baseball",
           status: "active"
@@ -145,6 +147,8 @@ export async function seed() {
     });
   }
 
+  await seedDemoBatMatchSession(player.id);
+
   return player;
 }
 
@@ -173,4 +177,92 @@ export async function clear() {
       graduationYear: 2033
     }
   });
+}
+
+async function seedDemoBatMatchSession(playerId: string) {
+  let session = await prisma.batMatchSession.findFirst({
+    where: {
+      playerId,
+      type: "first_batmatch",
+      version: 1
+    },
+    orderBy: { createdAt: "desc" }
+  });
+
+  const sessionData = {
+    status: "completed",
+    type: "first_batmatch",
+    version: 1,
+    confidenceScore: "0.9000",
+    startedAt: new Date("2026-07-01T12:00:00.000Z"),
+    completedAt: new Date("2026-07-01T12:20:00.000Z")
+  };
+
+  session = session
+    ? await prisma.batMatchSession.update({ where: { id: session.id }, data: sessionData })
+    : await prisma.batMatchSession.create({ data: { playerId, ...sessionData } });
+
+  const answers = [
+    ["goal-primary", { value: "better bat control" }],
+    ["current-bat-model", { value: "2026 Rawlings ICON USA 30 inch drop 8" }],
+    ["current-bat-length", { value: 30 }],
+    ["current-bat-weight", { value: 22 }],
+    ["current-bat-drop", { value: -8 }],
+    ["current-bat-feel", { value: "balanced" }],
+    ["current-certification", { value: "usa" }],
+    ["current-equipment-complaint", { value: "no_complaint" }],
+    ["hardest-at-plate", { value: "controlling_barrel" }],
+    ["box-confidence", { value: 4 }],
+    ["competition-confirmation", { value: "travel" }],
+    ["recent-growth-change", { value: "moderate" }],
+    ["preferred-swing-feel", { value: "light" }],
+    ["budget-comfort-level", { value: "premium" }],
+    ["budget-max", { value: 400 }],
+    ["anything-else", { value: "Likes light swing, good pop, and a large sweet spot. No known complaints." }]
+  ];
+
+  for (const [questionCode, answer] of answers) {
+    const question = await prisma.batMatchQuestion.findUnique({ where: { code: questionCode } });
+    if (!question) continue;
+
+    await prisma.batMatchAnswer.upsert({
+      where: {
+        sessionId_questionId: {
+          sessionId: session.id,
+          questionId: question.id
+        }
+      },
+      update: { answer },
+      create: {
+        sessionId: session.id,
+        questionId: question.id,
+        answer
+      }
+    });
+  }
+
+  const signal = await prisma.decisionSignal.findFirst({
+    where: {
+      sessionId: session.id,
+      playerId,
+      signalCode: "DEMO_BAT_CONTROL_PRIORITY"
+    }
+  });
+
+  if (signal) {
+    await prisma.decisionSignal.update({
+      where: { id: signal.id },
+      data: { confidence: "0.9000" }
+    });
+  } else {
+    await prisma.decisionSignal.create({
+      data: {
+        sessionId: session.id,
+        playerId,
+        signalCode: "DEMO_BAT_CONTROL_PRIORITY",
+        signalName: "Improve Bat Control",
+        confidence: "0.9000"
+      }
+    });
+  }
 }

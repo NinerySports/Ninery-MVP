@@ -1,0 +1,391 @@
+.page {
+  min-height: 100vh;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 80% 10%, rgba(214, 170, 78, 0.22), transparent 30rem),
+    linear-gradient(135deg, #07152a 0%, #0b1d38 48%, #f8fafc 48.1%, #ffffff 100%);
+  color: #ffffff;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: min(1120px, calc(100% - 40px));
+  margin: 0 auto;
+  padding: 26px 0;
+}
+
+.logo,
+.nav a,
+.primaryCta,
+.secondaryCta {
+  text-decoration: none;
+}
+
+.logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  color: #ffffff;
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+
+.logoMark {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid rgba(214, 170, 78, 0.7);
+  border-radius: 50%;
+  background: #d6aa4e;
+  color: #07152a;
+  font-weight: 900;
+}
+
+.nav {
+  display: flex;
+  gap: 24px;
+}
+
+.nav a {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.95rem;
+  font-weight: 650;
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(340px, 0.95fr);
+  align-items: center;
+  gap: 64px;
+  width: min(1120px, calc(100% - 40px));
+  margin: 0 auto;
+  padding: 68px 0 92px;
+}
+
+.heroContent {
+  max-width: 690px;
+}
+
+.kicker {
+  margin: 0 0 16px;
+  color: #d6aa4e;
+  font-size: 0.78rem;
+  font-weight: 850;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.hero h1 {
+  max-width: 780px;
+  margin: 0;
+  color: #ffffff;
+  font-size: clamp(3.15rem, 7vw, 5.9rem);
+  line-height: 0.94;
+  letter-spacing: 0;
+}
+
+.subheadline {
+  max-width: 650px;
+  margin: 28px 0 0;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 1.18rem;
+  line-height: 1.7;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 36px;
+}
+
+.primaryCta,
+.secondaryCta {
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  padding: 0 22px;
+  font-weight: 800;
+}
+
+.primaryCta {
+  background: #d6aa4e;
+  color: #07152a;
+  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.24);
+}
+
+.secondaryCta {
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+}
+
+.heroVisual {
+  position: relative;
+  min-height: 480px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 28px;
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.06)),
+    rgba(255, 255, 255, 0.1);
+  box-shadow: 0 26px 80px rgba(0, 0, 0, 0.32);
+  color: #ffffff;
+}
+
+.heroVisual::before {
+  position: absolute;
+  inset: 56px 34px auto auto;
+  width: 64px;
+  height: 260px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #f2d486, #936f2d);
+  box-shadow: 0 18px 52px rgba(0, 0, 0, 0.28);
+  content: "";
+  transform: rotate(42deg);
+}
+
+.visualTopline {
+  display: flex;
+  position: relative;
+  z-index: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.88rem;
+}
+
+.visualTopline strong {
+  color: #ffffff;
+}
+
+.scoreRing {
+  display: grid;
+  position: relative;
+  z-index: 1;
+  width: 184px;
+  height: 184px;
+  margin: 62px auto 54px;
+  place-items: center;
+  border: 13px solid rgba(214, 170, 78, 0.96);
+  border-left-color: rgba(255, 255, 255, 0.28);
+  border-radius: 50%;
+  background: rgba(7, 21, 42, 0.58);
+}
+
+.scoreRing span {
+  display: block;
+  color: #ffffff;
+  font-size: 4rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.scoreRing small {
+  color: rgba(255, 255, 255, 0.74);
+  font-weight: 700;
+}
+
+.fitRows {
+  display: grid;
+  position: relative;
+  z-index: 1;
+  gap: 12px;
+}
+
+.fitRows div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 14px 16px;
+  background: rgba(7, 21, 42, 0.46);
+}
+
+.fitRows span {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.fitRows strong {
+  color: #f2d486;
+}
+
+.trust,
+.howItWorks {
+  width: min(1120px, calc(100% - 40px));
+  margin: 0 auto;
+  color: #07152a;
+}
+
+.trust {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  padding: 10px 0 76px;
+}
+
+.trustCard,
+.step {
+  border: 1px solid rgba(7, 21, 42, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 18px 46px rgba(7, 21, 42, 0.08);
+}
+
+.trustCard {
+  padding: 26px;
+}
+
+.trustCard h2,
+.step h3,
+.sectionIntro h2 {
+  margin: 0;
+  color: #07152a;
+  letter-spacing: 0;
+}
+
+.trustCard h2 {
+  font-size: 1.12rem;
+}
+
+.trustCard p,
+.step p {
+  margin: 14px 0 0;
+  color: #42516a;
+  line-height: 1.65;
+}
+
+.howItWorks {
+  padding: 42px 0 86px;
+}
+
+.sectionIntro {
+  max-width: 680px;
+}
+
+.sectionIntro h2 {
+  font-size: clamp(2rem, 4vw, 3.4rem);
+  line-height: 1.05;
+}
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 32px;
+}
+
+.step {
+  padding: 28px;
+}
+
+.step span {
+  display: inline-flex;
+  width: 42px;
+  height: 42px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #07152a;
+  color: #d6aa4e;
+  font-weight: 900;
+}
+
+.step h3 {
+  margin-top: 22px;
+  font-size: 1.22rem;
+}
+
+@media (max-width: 900px) {
+  .page {
+    background:
+      radial-gradient(circle at 85% 6%, rgba(214, 170, 78, 0.2), transparent 22rem),
+      linear-gradient(180deg, #07152a 0%, #0b1d38 58%, #ffffff 58.1%, #ffffff 100%);
+  }
+
+  .header {
+    align-items: flex-start;
+    gap: 18px;
+  }
+
+  .nav {
+    gap: 14px;
+  }
+
+  .hero {
+    grid-template-columns: 1fr;
+    gap: 34px;
+    padding: 48px 0 64px;
+  }
+
+  .heroVisual {
+    min-height: 420px;
+  }
+
+  .trust,
+  .steps {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .header,
+  .hero,
+  .trust,
+  .howItWorks {
+    width: min(100% - 28px, 1120px);
+  }
+
+  .header {
+    flex-direction: column;
+    padding: 20px 0;
+  }
+
+  .hero h1 {
+    font-size: 3.1rem;
+  }
+
+  .subheadline {
+    font-size: 1.04rem;
+  }
+
+  .actions,
+  .primaryCta,
+  .secondaryCta {
+    width: 100%;
+  }
+
+  .heroVisual {
+    min-height: 384px;
+    padding: 22px;
+  }
+
+  .heroVisual::before {
+    right: 20px;
+    height: 220px;
+  }
+
+  .scoreRing {
+    width: 158px;
+    height: 158px;
+    margin: 52px auto 42px;
+  }
+
+  .scoreRing span {
+    font-size: 3.2rem;
+  }
+
+  .trustCard,
+  .step {
+    padding: 22px;
+  }
+}
