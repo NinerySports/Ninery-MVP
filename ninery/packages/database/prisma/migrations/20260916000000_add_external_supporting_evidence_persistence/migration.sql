@@ -171,6 +171,7 @@ CREATE TYPE "ExternalEvidenceMappingMethod" AS ENUM ('manual_review','controlled
 CREATE TYPE "ExternalEvidenceQualificationState" AS ENUM ('qualified','context_only','review_required','not_eligible');
 CREATE TYPE "ExternalEvidenceReviewerType" AS ENUM ('human','ai','system');
 CREATE TYPE "ExternalEvidenceConflictResolutionOutcome" AS ENUM ('resolved_no_material_conflict','resolved_claim_superseded','resolved_with_limitations','unresolved');
+CREATE TYPE "ExternalEvidenceIdentityScope" AS ENUM ('equipment_family','certification_family','drop_family','size_family','exact_variant');
 
 ALTER TABLE "external_evidence_sources" ALTER COLUMN "sourceType" TYPE "ExternalEvidenceSourceType" USING "sourceType"::"ExternalEvidenceSourceType";
 ALTER TABLE "external_evidence_extraction_runs" ALTER COLUMN "reviewState" TYPE "ExternalEvidenceReviewState" USING "reviewState"::"ExternalEvidenceReviewState";
@@ -192,7 +193,7 @@ ALTER TABLE "external_evidence_claim_dependencies" RENAME TO "external_evidence_
 ALTER TABLE "external_evidence_dependency_assessments" RENAME CONSTRAINT "external_evidence_claim_dependencies_pkey" TO "external_evidence_dependency_assessments_pkey";
 ALTER TABLE "external_evidence_dependency_assessments" ALTER COLUMN "dependencyType" TYPE "ExternalEvidenceDependencyType" USING "dependencyType"::"ExternalEvidenceDependencyType";
 ALTER TABLE "external_evidence_dependency_assessments" ALTER COLUMN "reviewedState" TYPE "ExternalEvidenceReviewState" USING "reviewedState"::"ExternalEvidenceReviewState";
-ALTER TABLE "external_evidence_dependency_assessments" ADD COLUMN "independenceGroupId" TEXT, ADD COLUMN "assessmentVersion" TEXT NOT NULL, ADD COLUMN "supersedesAssessmentId" UUID, ADD COLUMN "idempotencyKey" TEXT NOT NULL, ADD COLUMN "assessedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE "external_evidence_dependency_assessments" ADD COLUMN "independenceGroupId" TEXT, ADD COLUMN "assessmentVersion" TEXT NOT NULL, ADD COLUMN "supersedesAssessmentId" UUID, ADD COLUMN "idempotencyKey" TEXT NOT NULL, ADD COLUMN "assessedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, ADD COLUMN "reviewerType" "ExternalEvidenceReviewerType" NOT NULL, ADD COLUMN "reviewerReference" TEXT NOT NULL, ADD COLUMN "reviewedAt" TIMESTAMP(3) NOT NULL;
 ALTER TABLE "external_evidence_dependency_assessments" DROP COLUMN "createdAt";
 DROP INDEX "external_evidence_claim_dependencies_claimId_upstreamClaimId_dependencyType_key";
 ALTER TABLE "external_evidence_dependency_assessments" ADD CONSTRAINT "external_dependency_semantics" CHECK (("dependencyType"='independent_observation' AND "upstreamClaimId" IS NULL AND "independenceGroupId" IS NOT NULL) OR ("dependencyType"='unknown_dependency' AND "independenceGroupId" IS NULL) OR ("dependencyType"='original' AND "upstreamClaimId" IS NULL) OR ("dependencyType" IN ('syndicated_from','derived_from','copied_from','shared_upstream') AND "upstreamClaimId" IS NOT NULL));
@@ -255,7 +256,7 @@ ALTER TABLE "external_evidence_conflict_resolutions" ADD CONSTRAINT "external_co
 ALTER TABLE "external_supporting_role_decisions" DROP CONSTRAINT "external_supporting_role_decisions_normalizedClaimId_fkey", DROP CONSTRAINT "external_supporting_role_decisions_qualificationDecisionId_fkey", DROP CONSTRAINT "external_supporting_role_decisions_reviewDecisionId_fkey", DROP CONSTRAINT "external_supporting_role_requires_human_review", DROP CONSTRAINT "external_supporting_role_is_context_only", DROP CONSTRAINT "external_supporting_role_zero_authority";
 DROP INDEX "external_supporting_role_decisions_independenceGroupId_idx";
 ALTER TABLE "external_supporting_role_decisions" DROP COLUMN "construct", DROP COLUMN "identityScope", DROP COLUMN "independenceGroupId";
-ALTER TABLE "external_supporting_role_decisions" ADD COLUMN "rawClaimId" UUID NOT NULL, ADD COLUMN "dependencyAssessmentId" UUID NOT NULL, ADD COLUMN "constructRelationshipId" UUID NOT NULL, ADD COLUMN "decisionBookAuthorityGranted" BOOLEAN NOT NULL DEFAULT false, ADD COLUMN "idempotencyKey" TEXT NOT NULL, ADD COLUMN "decisionFingerprint" TEXT NOT NULL;
+ALTER TABLE "external_supporting_role_decisions" ADD COLUMN "rawClaimId" UUID NOT NULL, ADD COLUMN "identityAssertionId" UUID NOT NULL, ADD COLUMN "identityScope" "ExternalEvidenceIdentityScope" NOT NULL, ADD COLUMN "dependencyAssessmentId" UUID NOT NULL, ADD COLUMN "constructRelationshipId" UUID NOT NULL, ADD COLUMN "decisionBookAuthorityGranted" BOOLEAN NOT NULL DEFAULT false, ADD COLUMN "idempotencyKey" TEXT NOT NULL, ADD COLUMN "decisionFingerprint" TEXT NOT NULL;
 ALTER TABLE "external_supporting_role_decisions" ALTER COLUMN "reviewDecisionId" SET NOT NULL;
 ALTER TABLE "external_supporting_role_decisions" ALTER COLUMN "role" TYPE "ExternalEvidenceConstructRole" USING "role"::"ExternalEvidenceConstructRole";
 ALTER TABLE "external_supporting_role_decisions" ADD CONSTRAINT "external_supporting_authority_firewall" CHECK ("directEvidenceContribution"=0 AND "structuredContribution"=0 AND "physicalContribution"=0 AND "controlledContribution"=0 AND "canonicalValueCreated"=false AND "numericValueCreated"=false AND "synthesisEligibilityGranted"=false AND "compatibilityAuthorityGranted"=false AND "recommendationAuthorityGranted"=false AND "decisionBookAuthorityGranted"=false);
@@ -265,7 +266,9 @@ CREATE INDEX "external_supporting_role_decisions_dependencyAssessmentId_idx" ON 
 CREATE INDEX "external_supporting_role_decisions_constructRelationshipId_idx" ON "external_supporting_role_decisions"("constructRelationshipId");
 CREATE INDEX "external_supporting_role_decisions_qualificationDecisionId_idx" ON "external_supporting_role_decisions"("qualificationDecisionId");
 CREATE INDEX "external_supporting_role_decisions_reviewDecisionId_idx" ON "external_supporting_role_decisions"("reviewDecisionId");
+CREATE UNIQUE INDEX "external_evidence_claims_id_identityAssertionId_key" ON "external_evidence_claims"("id","identityAssertionId");
 ALTER TABLE "external_supporting_role_decisions" ADD CONSTRAINT "external_support_normalized_raw_fkey" FOREIGN KEY ("normalizedClaimId","rawClaimId") REFERENCES "external_evidence_normalized_claims"("id","rawClaimId") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "external_supporting_role_decisions" ADD CONSTRAINT "external_support_identity_lineage_fkey" FOREIGN KEY ("rawClaimId","identityAssertionId") REFERENCES "external_evidence_claims"("id","identityAssertionId") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "external_supporting_role_decisions" ADD CONSTRAINT "external_support_dependency_fkey" FOREIGN KEY ("dependencyAssessmentId","rawClaimId") REFERENCES "external_evidence_dependency_assessments"("id","claimId") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "external_supporting_role_decisions" ADD CONSTRAINT "external_support_relationship_fkey" FOREIGN KEY ("constructRelationshipId","normalizedClaimId") REFERENCES "external_evidence_construct_relationships"("id","normalizedClaimId") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "external_supporting_role_decisions" ADD CONSTRAINT "external_support_qualification_fkey" FOREIGN KEY ("qualificationDecisionId","normalizedClaimId","constructRelationshipId") REFERENCES "external_evidence_qualification_decisions"("id","normalizedClaimId","constructRelationshipId") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -290,17 +293,27 @@ CREATE FUNCTION validate_external_claim_provenance() RETURNS trigger LANGUAGE pl
 CREATE TRIGGER "external_claim_provenance" BEFORE INSERT ON "external_evidence_claims" FOR EACH ROW EXECUTE FUNCTION validate_external_claim_provenance();
 
 CREATE FUNCTION validate_external_supporting_role_decision() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE r RECORD; q RECORD; h RECORD; d RECORD; raw_state "ExternalEvidenceVerificationState"; normalized_state "ExternalEvidenceVerificationState";
+DECLARE r RECORD; q RECORD; h RECORD; d RECORD; c RECORD; i RECORD; s RECORD; normalized_state "ExternalEvidenceVerificationState";
 BEGIN
-  SELECT * INTO r FROM "external_evidence_construct_relationships" WHERE "id"=NEW."constructRelationshipId"; SELECT * INTO q FROM "external_evidence_qualification_decisions" WHERE "id"=NEW."qualificationDecisionId"; SELECT * INTO h FROM "external_evidence_review_decisions" WHERE "id"=NEW."reviewDecisionId"; SELECT * INTO d FROM "external_evidence_dependency_assessments" WHERE "id"=NEW."dependencyAssessmentId";
-  SELECT "verificationState" INTO raw_state FROM "external_evidence_claims" WHERE "id"=NEW."rawClaimId"; SELECT "verificationState" INTO normalized_state FROM "external_evidence_normalized_claims" WHERE "id"=NEW."normalizedClaimId";
-  IF r."proposedConstruct" NOT IN ('startup_demand','rotational_demand') OR r."mappingConfidence"<>'high' OR r."role"<>'supporting_context' OR r."reviewState" NOT IN ('reviewed_accepted','reviewed_with_limitations') OR r."constructValueCreated" THEN RAISE EXCEPTION 'construct relationship is not supporting eligible'; END IF;
-  IF r."policyVersion"<>'1.0-provisional' OR NEW."policy"<>'external_expert_supporting_role' OR NEW."policyVersion"<>'1.0-provisional' THEN RAISE EXCEPTION 'unsupported policy version'; END IF;
+  SELECT * INTO r FROM "external_evidence_construct_relationships" WHERE "id"=NEW."constructRelationshipId";
+  SELECT * INTO q FROM "external_evidence_qualification_decisions" WHERE "id"=NEW."qualificationDecisionId";
+  SELECT * INTO h FROM "external_evidence_review_decisions" WHERE "id"=NEW."reviewDecisionId";
+  SELECT * INTO d FROM "external_evidence_dependency_assessments" WHERE "id"=NEW."dependencyAssessmentId";
+  SELECT * INTO c FROM "external_evidence_claims" WHERE "id"=NEW."rawClaimId";
+  SELECT * INTO i FROM "external_evidence_identity_assertions" WHERE "id"=NEW."identityAssertionId";
+  SELECT src.* INTO s FROM "external_evidence_documents" doc JOIN "external_evidence_sources" src ON src."id"=doc."sourceId" WHERE doc."id"=c."documentId";
+  SELECT "verificationState" INTO normalized_state FROM "external_evidence_normalized_claims" WHERE "id"=NEW."normalizedClaimId";
+  IF s."sourceType"<>'independent_expert_review' OR c."claimType" NOT IN ('subjective_observation','comparative_observation') THEN RAISE EXCEPTION 'unsupported source or claim type'; END IF;
+  IF i."certainty" NOT IN ('exact_variant_match','equipment_model_match') OR i."equipmentId" IS NULL THEN RAISE EXCEPTION 'insufficient identity certainty'; END IF;
+  IF NEW."identityScope"='exact_variant' AND (i."certainty"<>'exact_variant_match' OR i."equipmentVariantId" IS NULL) THEN RAISE EXCEPTION 'identity scope is not applicable'; END IF;
+  IF NEW."identityScope"='certification_family' AND i."certification" IS NULL OR NEW."identityScope"='drop_family' AND i."drop" IS NULL OR NEW."identityScope"='size_family' AND (i."lengthInches" IS NULL OR i."weightOunces" IS NULL) THEN RAISE EXCEPTION 'identity scope is not applicable'; END IF;
+  IF r."proposedConstruct" NOT IN ('startup_demand','rotational_demand') OR r."mappingConfidence"<>'high' OR r."mappingVersion"<>'1.0' OR r."role"<>'supporting_context' OR r."reviewState" NOT IN ('reviewed_accepted','reviewed_with_limitations') OR r."constructValueCreated" OR EXISTS (SELECT 1 FROM "external_evidence_construct_relationships" x WHERE x."supersedesRelationshipId"=r."id") THEN RAISE EXCEPTION 'construct relationship is not current supporting eligible'; END IF;
+  IF r."policyVersion"<>'1.0-provisional' OR NEW."policy"<>'external_expert_supporting_role' OR NEW."policyVersion"<>'1.0-provisional' OR NEW."policyStatus"<>'PROVISIONAL_CONSTRUCT_SPECIFIC_POLICY' THEN RAISE EXCEPTION 'unsupported policy version'; END IF;
   IF q."state" NOT IN ('context_only','qualified') OR q."contractVersion"<>'1.0' THEN RAISE EXCEPTION 'qualification is not eligible'; END IF;
-  IF h."reviewerType"<>'human' OR h."decision" NOT IN ('reviewed_accepted','reviewed_with_limitations') THEN RAISE EXCEPTION 'genuine accepted human review required'; END IF;
-  IF d."dependencyType"<>'independent_observation' OR d."independenceGroupId" IS NULL OR d."reviewedState" NOT IN ('reviewed_accepted','reviewed_with_limitations') THEN RAISE EXCEPTION 'known-independent reviewed dependency assessment required'; END IF;
-  IF raw_state IN ('superseded','conflicting') OR normalized_state IN ('superseded','conflicting') OR EXISTS (SELECT 1 FROM "external_evidence_claims" c WHERE c."supersedesClaimId"=NEW."rawClaimId") THEN RAISE EXCEPTION 'superseded or conflicting claim cannot be active support'; END IF;
-  IF EXISTS (SELECT 1 FROM "external_evidence_conflict_members" m WHERE m."normalizedClaimId"=NEW."normalizedClaimId" AND NOT EXISTS (SELECT 1 FROM "external_evidence_conflict_resolutions" x WHERE x."conflictCaseId"=m."conflictCaseId" AND x."outcome" IN ('resolved_no_material_conflict','resolved_claim_superseded','resolved_with_limitations'))) THEN RAISE EXCEPTION 'unresolved conflict blocks support'; END IF;
+  IF h."reviewerType"<>'human' OR h."reviewerReference"='' OR h."decision" NOT IN ('reviewed_accepted','reviewed_with_limitations') THEN RAISE EXCEPTION 'genuine accepted human review required'; END IF;
+  IF d."dependencyType"<>'independent_observation' OR d."independenceGroupId" IS NULL OR d."reviewedState" NOT IN ('reviewed_accepted','reviewed_with_limitations') OR d."reviewerType"<>'human' OR d."reviewerReference"='' OR EXISTS (SELECT 1 FROM "external_evidence_dependency_assessments" x WHERE x."supersedesAssessmentId"=d."id") THEN RAISE EXCEPTION 'current human-reviewed independence assessment required'; END IF;
+  IF c."verificationState" IN ('superseded','conflicting') OR normalized_state IN ('superseded','conflicting') OR EXISTS (SELECT 1 FROM "external_evidence_claims" x WHERE x."supersedesClaimId"=NEW."rawClaimId") THEN RAISE EXCEPTION 'superseded or conflicting claim cannot be active support'; END IF;
+  IF EXISTS (SELECT 1 FROM "external_evidence_conflict_members" m WHERE m."normalizedClaimId"=NEW."normalizedClaimId" AND COALESCE((SELECT x."outcome" IN ('resolved_no_material_conflict','resolved_claim_superseded','resolved_with_limitations') FROM "external_evidence_conflict_resolutions" x WHERE x."conflictCaseId"=m."conflictCaseId" ORDER BY x."decidedAt" DESC, x."id" DESC LIMIT 1), false)=false) THEN RAISE EXCEPTION 'latest conflict state blocks support'; END IF;
   RETURN NEW;
 END $$;
 CREATE TRIGGER "external_supporting_role_validate" BEFORE INSERT ON "external_supporting_role_decisions" FOR EACH ROW EXECUTE FUNCTION validate_external_supporting_role_decision();

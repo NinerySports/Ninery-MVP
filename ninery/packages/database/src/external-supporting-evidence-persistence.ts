@@ -4,11 +4,13 @@ import { evaluateExternalExpertSupportingRole, type ExternalExpertSupportingRole
 export const EXTERNAL_SUPPORTING_PERSISTENCE_VERSION = "1.0" as const;
 export const EXTERNAL_SUPPORTING_POLICY = "external_expert_supporting_role" as const;
 export const EXTERNAL_SUPPORTING_POLICY_VERSION = "1.0-provisional" as const;
+export const EXTERNAL_SUPPORTING_QUALIFICATION_CONTRACT_VERSION = "1.0" as const;
+export const EXTERNAL_SUPPORTING_CONSTRUCT_MAPPING_VERSION = "1.0" as const;
 
 export type ExternalSupportingPersistenceContext = {
-  readonly rawClaim: { readonly id: string; readonly claimType: string; readonly verificationState: string; readonly supersededByCount: number; readonly document: { readonly sourceId: string; readonly source: { readonly id: string; readonly sourceType: string } }; readonly identity: { readonly certainty: string; readonly equipmentId?: string; readonly equipmentVariantId?: string; readonly variantEquipmentId?: string; readonly manufacturerMatches: boolean; readonly modelMatches: boolean; readonly modelYearMatches: boolean; readonly certificationMatches: boolean; readonly productFamilyMatches: boolean; readonly dropMatches?: boolean; readonly sizeMatches?: boolean; readonly variantMatches?: boolean } };
+  readonly rawClaim: { readonly id: string; readonly claimType: string; readonly verificationState: string; readonly supersededByCount: number; readonly document: { readonly sourceId: string; readonly source: { readonly id: string; readonly sourceType: string } }; readonly identity: { readonly id: string; readonly certainty: string; readonly equipmentId?: string; readonly equipmentVariantId?: string; readonly variantEquipmentId?: string; readonly manufacturerMatches: boolean; readonly modelMatches: boolean; readonly modelYearMatches: boolean; readonly certificationMatches: boolean; readonly productFamilyMatches: boolean; readonly dropMatches?: boolean; readonly sizeMatches?: boolean; readonly variantMatches?: boolean } };
   readonly normalizedClaim: { readonly id: string; readonly rawClaimId: string; readonly verificationState: string };
-  readonly dependencyAssessment: { readonly id: string; readonly claimId: string; readonly dependencyType: string; readonly independenceGroupId?: string; readonly reviewedState: string; readonly supersededByCount: number };
+  readonly dependencyAssessment: { readonly id: string; readonly claimId: string; readonly dependencyType: string; readonly independenceGroupId?: string; readonly reviewedState: string; readonly reviewerType: string; readonly reviewerReference: string; readonly supersededByCount: number };
   readonly constructRelationship: { readonly id: string; readonly normalizedClaimId: string; readonly proposedConstruct: string; readonly mappingConfidence: string; readonly mappingVersion: string; readonly policyVersion: string; readonly role: string; readonly reviewState: string; readonly constructValueCreated: boolean; readonly supersededByCount: number };
   readonly qualification: { readonly id: string; readonly normalizedClaimId: string; readonly constructRelationshipId: string; readonly contractVersion: string; readonly state: string };
   readonly review: { readonly id: string; readonly normalizedClaimId: string; readonly constructRelationshipId: string; readonly decision: string; readonly reviewerType: string; readonly reviewerReference: string };
@@ -23,6 +25,7 @@ export type ExternalSupportingPersistenceCommand = {
 
 export type PersistedExternalSupportingDecision = { readonly id: string; readonly idempotencyKey: string; readonly decisionFingerprint: string; readonly eligible: boolean; readonly role: string };
 export type ExternalSupportingDecisionInsert = ExternalSupportingPersistenceCommand & {
+  readonly identityAssertionId: string;
   readonly policy: typeof EXTERNAL_SUPPORTING_POLICY; readonly policyVersion: typeof EXTERNAL_SUPPORTING_POLICY_VERSION; readonly policyStatus: "PROVISIONAL_CONSTRUCT_SPECIFIC_POLICY";
   readonly eligible: true; readonly role: "supporting_context"; readonly reasons: readonly string[]; readonly blockers: readonly string[]; readonly decisionFingerprint: string;
   readonly directEvidenceContribution: 0; readonly structuredContribution: 0; readonly physicalContribution: 0; readonly controlledContribution: 0;
@@ -57,7 +60,7 @@ export class ExternalSupportingEvidencePersistenceService {
       validateBindings(command, context);
       const decision = evaluateContext(command, context);
       if (!decision.eligible) throw new ExternalSupportingPersistenceError("SUPPORTING_ROLE_INELIGIBLE", `Supporting role blocked: ${decision.blockers.join(", ")}`);
-      return repository.createDecision({ ...command, policy: EXTERNAL_SUPPORTING_POLICY, policyVersion: EXTERNAL_SUPPORTING_POLICY_VERSION,
+      return repository.createDecision({ ...command, identityAssertionId: context.rawClaim.identity.id, policy: EXTERNAL_SUPPORTING_POLICY, policyVersion: EXTERNAL_SUPPORTING_POLICY_VERSION,
         policyStatus: "PROVISIONAL_CONSTRUCT_SPECIFIC_POLICY", eligible: true, role: "supporting_context", reasons: decision.reasons, blockers: decision.blockers,
         decisionFingerprint, directEvidenceContribution: 0, structuredContribution: 0, physicalContribution: 0, controlledContribution: 0,
         canonicalValueCreated: false, numericValueCreated: false, synthesisEligibilityGranted: false, compatibilityAuthorityGranted: false,
@@ -79,6 +82,8 @@ function validateBindings(command: ExternalSupportingPersistenceCommand, context
   if (context.rawClaim.document.sourceId !== context.rawClaim.document.source.id) throw new ExternalSupportingPersistenceError("SOURCE_DOCUMENT_MISMATCH", "The claim document does not belong to its resolved source.");
   const identity = context.rawClaim.identity;
   if (identity.equipmentVariantId && (!identity.equipmentId || identity.variantEquipmentId !== identity.equipmentId)) throw new ExternalSupportingPersistenceError("EQUIPMENT_VARIANT_MISMATCH", "The identity variant does not belong to the asserted equipment.");
+  if (context.qualification.contractVersion !== EXTERNAL_SUPPORTING_QUALIFICATION_CONTRACT_VERSION || context.constructRelationship.mappingVersion !== EXTERNAL_SUPPORTING_CONSTRUCT_MAPPING_VERSION || context.constructRelationship.policyVersion !== EXTERNAL_SUPPORTING_POLICY_VERSION || context.constructRelationship.role !== "supporting_context" || !["reviewed_accepted", "reviewed_with_limitations"].includes(context.constructRelationship.reviewState) || context.constructRelationship.constructValueCreated) throw new ExternalSupportingPersistenceError("POLICY_CONTRACT_MISMATCH", "The qualification and construct relationship do not satisfy the #074 contract and policy.");
+  if (context.dependencyAssessment.reviewerType !== "human" || !context.dependencyAssessment.reviewerReference.trim() || !["reviewed_accepted", "reviewed_with_limitations"].includes(context.dependencyAssessment.reviewedState)) throw new ExternalSupportingPersistenceError("INDEPENDENCE_REVIEW_REQUIRED", "Independence requires separate accepted human reviewer provenance.");
 }
 
 function evaluateContext(command: ExternalSupportingPersistenceCommand, context: ExternalSupportingPersistenceContext) {
@@ -89,7 +94,7 @@ function evaluateContext(command: ExternalSupportingPersistenceCommand, context:
   return evaluateExternalExpertSupportingRole({ observationId: context.normalizedClaim.id, sourceType: requireMember("source type", context.rawClaim.document.source.sourceType, SOURCE_TYPES), claimType: requireMember("claim type", context.rawClaim.claimType, CLAIM_TYPES),
     dependencyType: requireMember("dependency type", context.dependencyAssessment.supersededByCount === 0 ? context.dependencyAssessment.dependencyType : "unknown_dependency", DEPENDENCY_TYPES),
     independenceGroupId: context.dependencyAssessment.independenceGroupId ?? "unknown", identityCertainty: requireMember("identity certainty", identity.certainty, IDENTITY_CERTAINTIES), identityScope: command.identityScope,
-    identityApplicable: context.constructRelationship.supersededByCount === 0 && !context.constructRelationship.constructValueCreated,
+    identityApplicable: context.constructRelationship.supersededByCount === 0 && !context.constructRelationship.constructValueCreated && identityScopeApplicable(command.identityScope, identity),
     identityChecks: { manufacturer: identity.manufacturerMatches, model: identity.modelMatches, modelYear: identity.modelYearMatches, certification: identity.certificationMatches,
       productFamily: identity.productFamilyMatches, drop: identity.dropMatches, size: identity.sizeMatches, variant: identity.variantMatches },
     construct: context.constructRelationship.proposedConstruct, mappingConfidence: requireMember("mapping confidence", context.constructRelationship.mappingConfidence, MAPPING_CONFIDENCES), qualificationState: requireMember("qualification state", context.qualification.state, QUALIFICATION_STATES),
@@ -114,4 +119,14 @@ function requireMember<const T extends readonly string[]>(label: string, value: 
 
 function fingerprintCommand(command: ExternalSupportingPersistenceCommand) {
   return createHash("sha256").update(JSON.stringify(Object.fromEntries(Object.entries(command).sort(([a], [b]) => a.localeCompare(b))))).digest("hex");
+}
+
+function identityScopeApplicable(scope: ExternalSupportingPersistenceCommand["identityScope"], identity: ExternalSupportingPersistenceContext["rawClaim"]["identity"]): boolean {
+  if (!identity.equipmentId) return false;
+  if (scope === "exact_variant") return identity.certainty === "exact_variant_match" && !!identity.equipmentVariantId && identity.variantMatches === true;
+  if (identity.certainty !== "exact_variant_match" && identity.certainty !== "equipment_model_match") return false;
+  if (scope === "equipment_family") return identity.manufacturerMatches && identity.modelMatches && identity.productFamilyMatches;
+  if (scope === "certification_family") return identity.certificationMatches;
+  if (scope === "drop_family") return identity.dropMatches === true;
+  return identity.sizeMatches === true;
 }

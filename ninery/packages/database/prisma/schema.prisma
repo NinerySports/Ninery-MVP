@@ -825,6 +825,14 @@ enum ExternalEvidenceConflictResolutionOutcome {
   unresolved
 }
 
+enum ExternalEvidenceIdentityScope {
+  equipment_family
+  certification_family
+  drop_family
+  size_family
+  exact_variant
+}
+
 // Acquisition-layer records for external supporting evidence. These records are
 // deliberately separate from EquipmentDNAEvidenceRecord and canonical evaluations.
 model ExternalEvidenceSource {
@@ -949,11 +957,13 @@ model ExternalEvidenceClaim {
   normalizedClaims      ExternalEvidenceNormalizedClaim[]
   dependencyAssessments ExternalEvidenceDependencyAssessment[] @relation("ExternalClaimDependencySubject")
   upstreamFor           ExternalEvidenceDependencyAssessment[] @relation("ExternalClaimDependencyUpstream")
+  supportingDecisions  ExternalSupportingRoleDecision[]
 
   @@index([documentId])
   @@index([identityAssertionId])
   @@index([claimType, verificationState, reviewState])
   @@index([supersedesClaimId])
+  @@unique([id, identityAssertionId])
   @@map("external_evidence_claims")
 }
 
@@ -995,6 +1005,9 @@ model ExternalEvidenceDependencyAssessment {
   independenceGroupId    String?
   dependencyRationale    String
   reviewedState          ExternalEvidenceReviewState
+  reviewerType           ExternalEvidenceReviewerType
+  reviewerReference      String
+  reviewedAt             DateTime
   assessmentVersion      String
   supersedesAssessmentId String?                        @db.Uuid
   idempotencyKey         String                         @unique
@@ -1141,6 +1154,8 @@ model ExternalEvidenceConflictMember {
 model ExternalSupportingRoleDecision {
   id                             String                        @id @default(uuid()) @db.Uuid
   rawClaimId                     String                        @db.Uuid
+  identityAssertionId            String                        @db.Uuid
+  identityScope                  ExternalEvidenceIdentityScope
   normalizedClaimId              String                        @db.Uuid
   dependencyAssessmentId         String                        @db.Uuid
   constructRelationshipId        String                        @db.Uuid
@@ -1170,6 +1185,7 @@ model ExternalSupportingRoleDecision {
   decidedAt                      DateTime                      @default(now())
 
   normalizedClaim       ExternalEvidenceNormalizedClaim       @relation(fields: [normalizedClaimId, rawClaimId], references: [id, rawClaimId], onDelete: Restrict)
+  rawClaim              ExternalEvidenceClaim                  @relation(fields: [rawClaimId, identityAssertionId], references: [id, identityAssertionId], onDelete: Restrict)
   dependencyAssessment  ExternalEvidenceDependencyAssessment  @relation(fields: [dependencyAssessmentId, rawClaimId], references: [id, claimId], onDelete: Restrict)
   constructRelationship ExternalEvidenceConstructRelationship @relation(fields: [constructRelationshipId, normalizedClaimId], references: [id, normalizedClaimId], onDelete: Restrict)
   qualificationDecision ExternalEvidenceQualificationDecision @relation(fields: [qualificationDecisionId, normalizedClaimId, constructRelationshipId], references: [id, normalizedClaimId, constructRelationshipId], onDelete: Restrict)
