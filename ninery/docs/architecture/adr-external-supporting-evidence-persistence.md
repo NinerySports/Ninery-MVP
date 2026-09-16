@@ -2,43 +2,41 @@
 
 ## Status
 
-Accepted for Ticket #075 as an additive persistence boundary for the domain work in Tickets #069–#074.
+Accepted for Ticket #075. This is an additive persistence boundary for Tickets #069-#074 and does not broaden the authority granted by Ticket #074.
 
-## Why a separate model is necessary
+## Decision
 
-`EquipmentDNAEvidenceRecord` is an evidence-calculation input. It does not provide durable, first-class records for source and document revisions, extraction provenance, identity certainty, informational lineage, qualification decisions, human review, conflict membership, policy decisions, or supersession. Encoding those concepts in its JSON fields would weaken referential integrity and make supporting observations appear eligible for canonical evidence calculations.
-
-Ticket #075 therefore adds a separate acquisition and supporting-context graph. It does not modify `EquipmentDNAEvidenceRecord`, `EquipmentDNAAttributeEvaluation`, synthesis, compatibility, or recommendation models.
-
-## Persisted graph
+External expert observations are persisted as an immutable, claim-bound graph:
 
 ```text
-ExternalEvidenceSource -> ExternalEvidenceDocument
-                       -> ExternalEvidenceClaim -> ExternalEvidenceNormalizedClaim
-                                                  -> QualificationDecision
-                                                  -> SupportingRoleDecision
-
-IdentityAssertion ----^       ClaimDependency records lineage
-ExtractionRun --------^       ConflictCase retains disagreements
-ReviewDecision -----------------------------^ explicit human gate
+Source -> Document -> Raw claim -> Normalized claim -> Construct relationship
+                                      |                    |-> Qualification
+                                      |                    |-> Human review
+                                      |-> Dependency assessment
+                                      |-> Conflict membership/resolution
+                                      `-------------------------> Supporting-role decision
 ```
 
-Document and claim supersession are self-references. Supersession preserves history; it never overwrites an older artifact. Conflict cases retain all member claims and select no automatic winner.
+A supporting-role decision must reference one raw claim, its normalized claim, one current dependency assessment, one construct relationship, the relationship's qualification decision, and an accepted human review of that same claim/relationship. The only eligible constructs are `startup_demand` and `rotational_demand`, under policy `external_expert_supporting_role` version `1.0-provisional`.
 
-## Authority firewall
+## Database Guarantees
 
-Supporting-role decisions are not evidence records and have no foreign key to canonical evaluations, compatibility records, or recommendations. The database enforces:
+PostgreSQL foreign keys bind every decision to the same claim and construct relationship. Check constraints freeze all contribution and authority fields at zero/false, constrain eligible rows to `supporting_context`, and pin the provisional policy. Source provenance is derived through the document; claims do not carry a second source ID. Equipment/variant identity is checked against the catalog.
 
-- all direct, structured, physical, and controlled contribution counts equal zero;
-- canonical and numeric creation flags remain false;
-- synthesis, compatibility, and recommendation authority remain false;
-- an eligible decision has role `supporting_context` and references a review decision;
-- an ineligible decision has role `not_applicable`.
+Evidence, assessments, relationships, qualifications, reviews, conflicts, resolutions, and supporting decisions are append-only. Corrections create new versioned records connected by supersession. Recursive triggers reject claim, document, dependency-assessment, and construct-relationship supersession cycles, including cycles longer than a direct self-reference. Idempotency keys are unique, and supporting decisions retain a deterministic request fingerprint.
 
-The application must additionally confirm that an eligible decision's referenced review was made by a human, accepted or accepted with limitations, and targets the same observation. The database cannot safely infer this polymorphic semantic relationship from a foreign key alone.
+The insertion trigger also fails closed unless the relationship is current, high-confidence, human accepted, construct-specific, and non-value-producing; qualification is eligible under contract 1.0; dependency is reviewed and known independent; and neither claim nor normalized claim is superseded, conflicting, or in an unresolved conflict.
 
-## Conservative rollout
+## Service Guarantees
 
-No rows are seeded or backfilled. In particular, the Ticket #071 Atlas acquisition pilot and Ticket #072–#073 calibration observations remain research fixtures and are not promoted. No human review records are fabricated. Production ingestion remains a separate, explicitly reviewed operation.
+`ExternalSupportingEvidencePersistenceService` runs lookup, validation, policy evaluation, and insertion in one repository transaction. It rejects cross-claim or cross-construct IDs, unsupported enum values, source/document mismatches, equipment/variant mismatches, unknown or dependent provenance, non-human approvals, stale dependency/relationship records, unsupported constructs, and conflicting or superseded claims. Exact replay returns the existing immutable decision; reuse of an idempotency key with different input fails.
 
-All provenance tables use restrictive deletion. The new schema is additive, and existing evidence, evaluation, synthesis, compatibility, and recommendation behavior is unchanged.
+Current eligibility is deliberately derived, not copied onto history. Readers re-evaluate a stored decision against the latest conflict and supersession state. A later conflict or superseding record therefore makes support inactive without editing or deleting the historical decision.
+
+## Authority Firewall
+
+Supporting decisions cannot create canonical or numeric values and contribute no direct, structured, physical, or controlled evidence. They cannot grant synthesis, compatibility, recommendation, or Decision Book authority. There are no foreign keys from this graph to canonical evaluations, compatibility outputs, or recommendations.
+
+## Rollout
+
+The pending Ticket #075 migration may be revised because it has not merged or been applied. No source, document, observation, approval, qualification, or supporting-decision rows are seeded or backfilled. Ticket #071-#073 research fixtures remain research fixtures. No public API, web UI, recommendation score, ranking, or eligibility behavior changes.
