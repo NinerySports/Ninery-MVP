@@ -72,6 +72,9 @@ integration("PostgreSQL migration, constraints, current-state reads, and real Pr
   const self = randomUUID();
   await assert.rejects(() => db.externalEvidenceClaim.create({ data: { id: self, documentId: valid.documentId, identityAssertionId: valid.identityAssertionId, extractionRunId: valid.extractionRunId, claimType: "subjective_observation", verificationState: "source_confirmed", reviewState: "reviewed_accepted", authority: "none", authorityRationale: "test", limitations: [], supersedesClaimId: self } }));
   await assert.rejects(() => db.externalEvidenceClaim.update({ where: { id: valid.command.rawClaimId }, data: { supersedesClaimId: valid.command.rawClaimId } }));
+  const cycleA = await graph();
+  const cycleB = await db.externalEvidenceClaim.create({ data: { documentId: cycleA.documentId, identityAssertionId: cycleA.identityAssertionId, extractionRunId: cycleA.extractionRunId, claimType: "subjective_observation", verificationState: "source_confirmed", reviewState: "reviewed_accepted", authority: "none", authorityRationale: "cycle test", limitations: [], supersedesClaimId: cycleA.command.rawClaimId } });
+  await assert.rejects(() => db.externalEvidenceClaim.update({ where: { id: cycleA.command.rawClaimId }, data: { supersedesClaimId: cycleB.id } }), "multi-node supersession cycle is rejected");
 
   const before = await db.externalSupportingRoleDecision.count();
   await assert.rejects(() => db.$transaction(async (tx) => {
