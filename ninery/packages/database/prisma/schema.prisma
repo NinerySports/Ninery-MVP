@@ -472,6 +472,7 @@ model Equipment {
   familiarityRecords              CurrentEquipmentFamiliarityRecord[]
   currentTransitionShadowStudies  TransitionExtendedShadowStudy[]     @relation("CurrentTransitionShadowEquipment")
   proposedTransitionShadowStudies TransitionExtendedShadowStudy[]     @relation("ProposedTransitionShadowEquipment")
+  externalEvidenceIdentities      ExternalEvidenceIdentityAssertion[]
 
   @@index([manufacturer])
   @@index([model])
@@ -499,6 +500,7 @@ model EquipmentVariant {
   familiarityRecords              CurrentEquipmentFamiliarityRecord[]
   currentTransitionShadowStudies  TransitionExtendedShadowStudy[]     @relation("CurrentTransitionShadowVariant")
   proposedTransitionShadowStudies TransitionExtendedShadowStudy[]     @relation("ProposedTransitionShadowVariant")
+  externalEvidenceIdentities      ExternalEvidenceIdentityAssertion[]
 
   @@index([equipmentId])
   @@map("equipment_variants")
@@ -720,6 +722,482 @@ model EquipmentDNAEvidenceRecord {
   @@index([status])
   @@index([createdAt])
   @@map("equipment_dna_evidence_records")
+}
+
+enum ExternalEvidenceSourceType {
+  manufacturer_primary
+  certification_authority
+  official_product_documentation
+  retailer
+  independent_expert_review
+  structured_testing_publication
+  user_review
+  community_discussion
+  ninery_internal_measurement
+  ninery_internal_evaluation
+  ninery_controlled_test
+  ninery_structured_field_observation
+  derived_model_output
+}
+
+enum ExternalEvidenceClaimType {
+  factual_specification
+  subjective_observation
+  comparative_observation
+  marketing_claim
+  field_observation
+  measurement_observation
+  test_observation
+  modeled_output
+  certification_claim
+  identity_claim
+}
+
+enum ExternalEvidenceVerificationState {
+  unverified_extracted
+  source_confirmed
+  corroborated
+  conflicting
+  review_required
+  superseded
+}
+
+enum ExternalEvidenceReviewState {
+  not_reviewed
+  review_not_required
+  review_pending
+  reviewed_accepted
+  reviewed_with_limitations
+  reviewed_rejected
+}
+
+enum ExternalEvidenceDependencyType {
+  original
+  syndicated_from
+  derived_from
+  copied_from
+  shared_upstream
+  independent_observation
+  unknown_dependency
+}
+
+enum ExternalEvidenceIdentityCertainty {
+  exact_variant_match
+  equipment_model_match
+  family_only
+  ambiguous
+  conflicting
+  unresolved
+}
+
+enum ExternalEvidenceConstructRole {
+  direct_construct_evidence
+  supporting_context
+  calibration_evidence
+  not_applicable
+  candidate_only
+}
+
+enum ExternalEvidenceMappingMethod {
+  manual_review
+  controlled_vocabulary
+  policy_mapping
+  keyword_candidate
+}
+
+enum ExternalEvidenceQualificationState {
+  qualified
+  context_only
+  review_required
+  not_eligible
+}
+
+enum ExternalEvidenceReviewerType {
+  human
+  ai
+  system
+}
+
+enum ExternalEvidenceConflictResolutionOutcome {
+  resolved_no_material_conflict
+  resolved_claim_superseded
+  resolved_with_limitations
+  unresolved
+}
+
+enum ExternalEvidenceIdentityScope {
+  equipment_family
+  certification_family
+  drop_family
+  size_family
+  exact_variant
+}
+
+// Acquisition-layer records for external supporting evidence. These records are
+// deliberately separate from EquipmentDNAEvidenceRecord and canonical evaluations.
+model ExternalEvidenceSource {
+  id                String                     @id @default(uuid()) @db.Uuid
+  stableKey         String                     @unique
+  displayName       String
+  sourceType        ExternalEvidenceSourceType
+  publisherIdentity String?
+  operatorIdentity  String?
+  state             String                     @default("active")
+  sourceVersion     String
+  metadata          Json?
+  createdAt         DateTime                   @default(now())
+
+  documents ExternalEvidenceDocument[]
+
+  @@index([sourceType])
+  @@index([state])
+  @@map("external_evidence_sources")
+}
+
+model ExternalEvidenceDocument {
+  id                   String    @id @default(uuid()) @db.Uuid
+  sourceId             String    @db.Uuid
+  documentType         String
+  sourceReference      String
+  title                String
+  publishedAt          DateTime?
+  retrievedAt          DateTime
+  modelYear            Int?
+  revision             String    @default("unversioned")
+  contentFingerprint   String?
+  availability         String
+  upstreamDocumentId   String?   @db.Uuid
+  supersedesDocumentId String?   @db.Uuid
+  createdAt            DateTime  @default(now())
+
+  source              ExternalEvidenceSource     @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  upstreamDocument    ExternalEvidenceDocument?  @relation("ExternalDocumentUpstream", fields: [upstreamDocumentId], references: [id], onDelete: Restrict)
+  downstreamDocuments ExternalEvidenceDocument[] @relation("ExternalDocumentUpstream")
+  supersedesDocument  ExternalEvidenceDocument?  @relation("ExternalDocumentSupersession", fields: [supersedesDocumentId], references: [id], onDelete: Restrict)
+  supersededBy        ExternalEvidenceDocument[] @relation("ExternalDocumentSupersession")
+  claims              ExternalEvidenceClaim[]
+
+  @@unique([sourceId, sourceReference, revision])
+  @@index([sourceId])
+  @@index([contentFingerprint])
+  @@index([supersedesDocumentId])
+  @@map("external_evidence_documents")
+}
+
+model ExternalEvidenceExtractionRun {
+  id               String                      @id @default(uuid()) @db.Uuid
+  method           String
+  extractorType    String
+  extractorId      String
+  extractorVersion String
+  executedAt       DateTime
+  schemaVersion    String
+  reviewState      ExternalEvidenceReviewState
+  createdAt        DateTime                    @default(now())
+
+  claims ExternalEvidenceClaim[]
+
+  @@index([method])
+  @@index([reviewState])
+  @@map("external_evidence_extraction_runs")
+}
+
+model ExternalEvidenceIdentityAssertion {
+  id                    String                            @id @default(uuid()) @db.Uuid
+  certainty             ExternalEvidenceIdentityCertainty
+  manufacturer          String?
+  model                 String?
+  modelYear             Int?
+  certification         String?
+  constructionRevision  String?
+  lengthInches          Decimal?                          @db.Decimal(5, 2)
+  weightOunces          Decimal?                          @db.Decimal(5, 2)
+  drop                  Int?
+  sku                   String?
+  manufacturerProductId String?
+  upc                   String?
+  equipmentId           String?                           @db.Uuid
+  equipmentVariantId    String?                           @db.Uuid
+  limitations           Json
+  createdAt             DateTime                          @default(now())
+
+  equipment        Equipment?              @relation(fields: [equipmentId], references: [id], onDelete: Restrict)
+  equipmentVariant EquipmentVariant?       @relation(fields: [equipmentVariantId], references: [id], onDelete: Restrict)
+  claims           ExternalEvidenceClaim[]
+
+  @@index([certainty])
+  @@index([equipmentId])
+  @@index([equipmentVariantId])
+  @@index([manufacturer, model, modelYear])
+  @@map("external_evidence_identity_assertions")
+}
+
+model ExternalEvidenceClaim {
+  id                  String                            @id @default(uuid()) @db.Uuid
+  documentId          String                            @db.Uuid
+  identityAssertionId String                            @db.Uuid
+  extractionRunId     String                            @db.Uuid
+  sourceLocation      String?
+  rawText             String?
+  rawStructuredValue  Json?
+  claimType           ExternalEvidenceClaimType
+  verificationState   ExternalEvidenceVerificationState
+  reviewState         ExternalEvidenceReviewState
+  authority           String
+  authorityRationale  String
+  limitations         Json
+  supersedesClaimId   String?                           @db.Uuid
+  createdAt           DateTime                          @default(now())
+
+  document              ExternalEvidenceDocument               @relation(fields: [documentId], references: [id], onDelete: Restrict)
+  identityAssertion     ExternalEvidenceIdentityAssertion      @relation(fields: [identityAssertionId], references: [id], onDelete: Restrict)
+  extractionRun         ExternalEvidenceExtractionRun          @relation(fields: [extractionRunId], references: [id], onDelete: Restrict)
+  supersedesClaim       ExternalEvidenceClaim?                 @relation("ExternalClaimSupersession", fields: [supersedesClaimId], references: [id], onDelete: Restrict)
+  supersededBy          ExternalEvidenceClaim[]                @relation("ExternalClaimSupersession")
+  normalizedClaims      ExternalEvidenceNormalizedClaim[]
+  dependencyAssessments ExternalEvidenceDependencyAssessment[] @relation("ExternalClaimDependencySubject")
+  upstreamFor           ExternalEvidenceDependencyAssessment[] @relation("ExternalClaimDependencyUpstream")
+  supportingDecisions  ExternalSupportingRoleDecision[]
+
+  @@index([documentId])
+  @@index([identityAssertionId])
+  @@index([claimType, verificationState, reviewState])
+  @@index([supersedesClaimId])
+  @@unique([id, identityAssertionId])
+  @@map("external_evidence_claims")
+}
+
+model ExternalEvidenceNormalizedClaim {
+  id                   String                            @id @default(uuid()) @db.Uuid
+  rawClaimId           String                            @db.Uuid
+  claimKey             String
+  normalizedValue      Json
+  normalizedUnit       String?
+  originalValue        Json?
+  originalUnit         String?
+  normalizationMethod  String
+  normalizationVersion String
+  evidenceClass        String
+  verificationState    ExternalEvidenceVerificationState
+  reviewState          ExternalEvidenceReviewState
+  limitations          Json
+  createdAt            DateTime                          @default(now())
+
+  rawClaim               ExternalEvidenceClaim                   @relation(fields: [rawClaimId], references: [id], onDelete: Restrict)
+  qualificationDecisions ExternalEvidenceQualificationDecision[]
+  constructRelationships ExternalEvidenceConstructRelationship[]
+  reviewDecisions        ExternalEvidenceReviewDecision[]
+  supportingDecisions    ExternalSupportingRoleDecision[]
+  conflictMemberships    ExternalEvidenceConflictMember[]
+
+  @@unique([rawClaimId, claimKey, normalizationVersion])
+  @@unique([id, rawClaimId])
+  @@index([claimKey])
+  @@index([verificationState, reviewState])
+  @@map("external_evidence_normalized_claims")
+}
+
+model ExternalEvidenceDependencyAssessment {
+  id                     String                         @id @default(uuid()) @db.Uuid
+  claimId                String                         @db.Uuid
+  upstreamClaimId        String?                        @db.Uuid
+  dependencyType         ExternalEvidenceDependencyType
+  independenceGroupId    String?
+  dependencyRationale    String
+  reviewedState          ExternalEvidenceReviewState
+  reviewerType           ExternalEvidenceReviewerType
+  reviewerReference      String
+  reviewedAt             DateTime
+  assessmentVersion      String
+  supersedesAssessmentId String?                        @db.Uuid
+  idempotencyKey         String                         @unique
+  assessedAt             DateTime                       @default(now())
+
+  claim                ExternalEvidenceClaim                  @relation("ExternalClaimDependencySubject", fields: [claimId], references: [id], onDelete: Restrict)
+  upstreamClaim        ExternalEvidenceClaim?                 @relation("ExternalClaimDependencyUpstream", fields: [upstreamClaimId], references: [id], onDelete: Restrict)
+  supersedesAssessment ExternalEvidenceDependencyAssessment?  @relation("ExternalDependencySupersession", fields: [supersedesAssessmentId], references: [id], onDelete: Restrict)
+  supersededBy         ExternalEvidenceDependencyAssessment[] @relation("ExternalDependencySupersession")
+  supportingDecisions  ExternalSupportingRoleDecision[]
+
+  @@unique([id, claimId])
+  @@index([claimId, assessedAt])
+  @@index([upstreamClaimId])
+  @@index([dependencyType])
+  @@index([independenceGroupId])
+  @@index([supersedesAssessmentId])
+  @@map("external_evidence_dependency_assessments")
+}
+
+model ExternalEvidenceConstructRelationship {
+  id                       String                        @id @default(uuid()) @db.Uuid
+  normalizedClaimId        String                        @db.Uuid
+  proposedConstruct        String
+  mappingMethod            ExternalEvidenceMappingMethod
+  mappingConfidence        String
+  mappingVersion           String
+  policyVersion            String
+  role                     ExternalEvidenceConstructRole
+  reviewState              ExternalEvidenceReviewState
+  rationale                String
+  limitations              Json
+  constructValueCreated    Boolean                       @default(false)
+  supersedesRelationshipId String?                       @db.Uuid
+  idempotencyKey           String                        @unique
+  createdAt                DateTime                      @default(now())
+
+  normalizedClaim        ExternalEvidenceNormalizedClaim         @relation(fields: [normalizedClaimId], references: [id], onDelete: Restrict)
+  supersedesRelationship ExternalEvidenceConstructRelationship?  @relation("ExternalConstructRelationshipSupersession", fields: [supersedesRelationshipId], references: [id], onDelete: Restrict)
+  supersededBy           ExternalEvidenceConstructRelationship[] @relation("ExternalConstructRelationshipSupersession")
+  qualificationDecisions ExternalEvidenceQualificationDecision[]
+  reviewDecisions        ExternalEvidenceReviewDecision[]
+  supportingDecisions    ExternalSupportingRoleDecision[]
+
+  @@unique([id, normalizedClaimId])
+  @@index([normalizedClaimId, proposedConstruct])
+  @@index([role, reviewState])
+  @@index([supersedesRelationshipId])
+  @@map("external_evidence_construct_relationships")
+}
+
+model ExternalEvidenceQualificationDecision {
+  id                      String                             @id @default(uuid()) @db.Uuid
+  normalizedClaimId       String                             @db.Uuid
+  constructRelationshipId String                             @db.Uuid
+  contractVersion         String
+  state                   ExternalEvidenceQualificationState
+  proposedEvidenceClass   String?
+  proposedTargetLevel     String?
+  reasons                 Json
+  gaps                    Json
+  blockers                Json
+  warnings                Json
+  limitations             Json
+  idempotencyKey          String                             @unique
+  decidedAt               DateTime                           @default(now())
+
+  normalizedClaim       ExternalEvidenceNormalizedClaim       @relation(fields: [normalizedClaimId], references: [id], onDelete: Restrict)
+  constructRelationship ExternalEvidenceConstructRelationship @relation(fields: [constructRelationshipId, normalizedClaimId], references: [id, normalizedClaimId], onDelete: Restrict)
+  supportingDecisions   ExternalSupportingRoleDecision[]
+
+  @@unique([id, normalizedClaimId, constructRelationshipId])
+  @@index([normalizedClaimId, decidedAt])
+  @@index([constructRelationshipId])
+  @@index([contractVersion, state])
+  @@map("external_evidence_qualification_decisions")
+}
+
+model ExternalEvidenceReviewDecision {
+  id                      String                       @id @default(uuid()) @db.Uuid
+  normalizedClaimId       String                       @db.Uuid
+  constructRelationshipId String                       @db.Uuid
+  decision                ExternalEvidenceReviewState
+  reviewerType            ExternalEvidenceReviewerType
+  reviewerReference       String
+  reason                  String
+  limitations             Json
+  idempotencyKey          String                       @unique
+  decidedAt               DateTime                     @default(now())
+
+  normalizedClaim       ExternalEvidenceNormalizedClaim       @relation(fields: [normalizedClaimId], references: [id], onDelete: Restrict)
+  constructRelationship ExternalEvidenceConstructRelationship @relation(fields: [constructRelationshipId, normalizedClaimId], references: [id, normalizedClaimId], onDelete: Restrict)
+  supportingDecisions   ExternalSupportingRoleDecision[]
+
+  @@unique([id, normalizedClaimId, constructRelationshipId])
+  @@index([normalizedClaimId, constructRelationshipId, decidedAt])
+  @@index([reviewerReference, decidedAt])
+  @@map("external_evidence_review_decisions")
+}
+
+model ExternalEvidenceConflictCase {
+  id               String   @id @default(uuid()) @db.Uuid
+  claimKey         String
+  identityScopeKey String
+  idempotencyKey   String   @unique
+  openedAt         DateTime @default(now())
+
+  members     ExternalEvidenceConflictMember[]
+  resolutions ExternalEvidenceConflictResolution[]
+
+  @@index([claimKey, identityScopeKey])
+  @@map("external_evidence_conflict_cases")
+}
+
+model ExternalEvidenceConflictResolution {
+  id                String                                    @id @default(uuid()) @db.Uuid
+  conflictCaseId    String                                    @db.Uuid
+  outcome           ExternalEvidenceConflictResolutionOutcome
+  reviewerType      ExternalEvidenceReviewerType
+  reviewerReference String
+  rationale         String
+  limitations       Json
+  idempotencyKey    String                                    @unique
+  decidedAt         DateTime                                  @default(now())
+
+  conflictCase ExternalEvidenceConflictCase @relation(fields: [conflictCaseId], references: [id], onDelete: Restrict)
+
+  @@index([conflictCaseId, decidedAt])
+  @@map("external_evidence_conflict_resolutions")
+}
+
+model ExternalEvidenceConflictMember {
+  conflictCaseId    String @db.Uuid
+  normalizedClaimId String @db.Uuid
+
+  conflictCase    ExternalEvidenceConflictCase    @relation(fields: [conflictCaseId], references: [id], onDelete: Restrict)
+  normalizedClaim ExternalEvidenceNormalizedClaim @relation(fields: [normalizedClaimId], references: [id], onDelete: Restrict)
+
+  @@id([conflictCaseId, normalizedClaimId])
+  @@index([normalizedClaimId])
+  @@map("external_evidence_conflict_members")
+}
+
+model ExternalSupportingRoleDecision {
+  id                             String                        @id @default(uuid()) @db.Uuid
+  rawClaimId                     String                        @db.Uuid
+  identityAssertionId            String                        @db.Uuid
+  identityScope                  ExternalEvidenceIdentityScope
+  normalizedClaimId              String                        @db.Uuid
+  dependencyAssessmentId         String                        @db.Uuid
+  constructRelationshipId        String                        @db.Uuid
+  qualificationDecisionId        String                        @db.Uuid
+  reviewDecisionId               String                        @db.Uuid
+  policy                         String
+  policyVersion                  String
+  policyStatus                   String
+  eligible                       Boolean
+  role                           ExternalEvidenceConstructRole
+  direction                      String
+  comparisonTarget               String?
+  reasons                        Json
+  blockers                       Json
+  directEvidenceContribution     Int                           @default(0)
+  structuredContribution         Int                           @default(0)
+  physicalContribution           Int                           @default(0)
+  controlledContribution         Int                           @default(0)
+  canonicalValueCreated          Boolean                       @default(false)
+  numericValueCreated            Boolean                       @default(false)
+  synthesisEligibilityGranted    Boolean                       @default(false)
+  compatibilityAuthorityGranted  Boolean                       @default(false)
+  recommendationAuthorityGranted Boolean                       @default(false)
+  decisionBookAuthorityGranted   Boolean                       @default(false)
+  idempotencyKey                 String                        @unique
+  decisionFingerprint            String
+  decidedAt                      DateTime                      @default(now())
+
+  normalizedClaim       ExternalEvidenceNormalizedClaim       @relation(fields: [normalizedClaimId, rawClaimId], references: [id, rawClaimId], onDelete: Restrict)
+  rawClaim              ExternalEvidenceClaim                  @relation(fields: [rawClaimId, identityAssertionId], references: [id, identityAssertionId], onDelete: Restrict)
+  dependencyAssessment  ExternalEvidenceDependencyAssessment  @relation(fields: [dependencyAssessmentId, rawClaimId], references: [id, claimId], onDelete: Restrict)
+  constructRelationship ExternalEvidenceConstructRelationship @relation(fields: [constructRelationshipId, normalizedClaimId], references: [id, normalizedClaimId], onDelete: Restrict)
+  qualificationDecision ExternalEvidenceQualificationDecision @relation(fields: [qualificationDecisionId, normalizedClaimId, constructRelationshipId], references: [id, normalizedClaimId, constructRelationshipId], onDelete: Restrict)
+  reviewDecision        ExternalEvidenceReviewDecision        @relation(fields: [reviewDecisionId, normalizedClaimId, constructRelationshipId], references: [id, normalizedClaimId, constructRelationshipId], onDelete: Restrict)
+
+  @@index([normalizedClaimId, decidedAt])
+  @@index([policy, policyVersion, eligible])
+  @@index([dependencyAssessmentId])
+  @@index([constructRelationshipId])
+  @@index([qualificationDecisionId])
+  @@index([reviewDecisionId])
+  @@map("external_supporting_role_decisions")
 }
 
 model EquipmentDNAAttributeEvaluation {
