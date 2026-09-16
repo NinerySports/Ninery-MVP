@@ -1,0 +1,134 @@
+{
+  "sessionId": "demarini-protocol-v1-1-calibration-01",
+  "protocolVersion": "1.1",
+  "questionnaireVersion": "1.1",
+  "studyClassification": "protocol_calibration_evidence",
+  "equipmentId": "6cf0f7fa-c8c2-4ce7-a36e-6ad1c52cc56c",
+  "equipmentVariantId": "af5ff27c-aedd-4f56-88c3-c1ec4b70affa",
+  "evaluationDate": "2026-08-29",
+  "physicalVerification": {
+    "equipmentId": "6cf0f7fa-c8c2-4ce7-a36e-6ad1c52cc56c",
+    "equipmentVariantId": "af5ff27c-aedd-4f56-88c3-c1ec4b70affa",
+    "manufacturer": "DeMarini",
+    "model": "The Goods USA",
+    "modelYear": 2023,
+    "certification": "USA",
+    "lengthInches": 30,
+    "weightOunces": 20,
+    "dropWeight": -10,
+    "source": "combined",
+    "verifiedAt": "2026-08-29",
+    "verifiedBy": "transition-operator",
+    "confidence": "confident"
+  },
+  "equipmentCondition": "normal_used_condition",
+  "evaluator": {
+    "evaluatorId": "physical-evaluator-07",
+    "category": "experienced_player_evaluator",
+    "confidence": "medium",
+    "relationship": "repeat_evaluator"
+  },
+  "testingLimitations": [],
+  "drySwingBlocks": {
+    "startupDemandTrials": 4,
+    "rotationalDemandTrials": 4,
+    "barrelRedirectDemandTrials": 4
+  },
+  "controlledContactBlocks": {
+    "centeredContactTrials": 6,
+    "nearCenterHandleSideTrials": 6,
+    "nearCenterEndSideTrials": 6
+  },
+  "contactLocationControls": {
+    "centeredContactVerified": true,
+    "handleSideMissesModestAndNearCenter": true,
+    "endSideMissesModestAndNearCenter": true,
+    "methodNotes": "Batter and observer verified that contact locations were where they were intended to be."
+  },
+  "responses": [
+    {
+      "questionId": "v1.1-q01",
+      "dimensionKey": "startup_demand",
+      "observation": "moderate",
+      "notes": ""
+    },
+    {
+      "questionId": "v1.1-q02",
+      "dimensionKey": "rotational_demand",
+      "observation": "high",
+      "notes": ""
+    },
+    {
+      "questionId": "v1.1-q03",
+      "dimensionKey": "barrel_redirect_demand",
+      "observation": "moderate",
+      "notes": ""
+    },
+    {
+      "questionId": "v1.1-q04",
+      "dimensionKey": "directional_adjustment_control",
+      "observation": "moderate",
+      "notes": ""
+    },
+    {
+      "questionId": "v1.1-q05",
+      "dimensionKey": "barrel_path_repeatability",
+      "observation": "moderate",
+      "notes": ""
+    },
+    {
+      "questionId": "v1.1-q06",
+      "dimensionKey": "start_stop_redirect_control",
+      "observation": "high",
+      "notes": ""
+    },
+    {
+      "questionId": "v1.1-q07",
+      "dimensionKey": "center_response_baseline",
+      "observation": "high",
+      "notes": ""
+    },
+    {
+      "questionId": "v1.1-q08",
+      "dimensionKey": "handle_side_miss_tolerance",
+      "observation": "moderate",
+      "notes": ""
+    },
+    {
+      "questionId": "v1.1-q09",
+      "dimensionKey": "end_side_miss_tolerance",
+      "observation": "moderate",
+      "notes": ""
+    },
+    {
+      "questionId": "v1.1-q10",
+      "dimensionKey": "response_degradation",
+      "observation": "high",
+      "notes": ""
+    },
+    {
+      "questionId": "v1.1-q11",
+      "dimensionKey": "usable_contact_region_breadth",
+      "observation": "low",
+      "notes": ""
+    },
+    {
+      "questionId": "v1.1-q12",
+      "dimensionKey": "centered_response_consistency",
+      "observation": "moderate",
+      "notes": ""
+    },
+    {
+      "questionId": "v1.1-q13",
+      "dimensionKey": "near_center_response_consistency",
+      "observation": "moderate",
+      "notes": ""
+    }
+  ],
+  "provenanceClassification": "real_protocol_calibration_observation",
+  "operatorWarnings": [
+    "Do not fill evaluator responses before a genuine independent physical session.",
+    "Do not show the evaluator prior evidence, synthesis, conflict analysis, canonical values, or recommendations.",
+    "This packet is calibration-only and cannot create canonical or recommendation inputs."
+  ]
+}

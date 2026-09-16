@@ -234,6 +234,60 @@ enum ProfileConfidenceLevel {
   validated
 }
 
+enum CurrentEquipmentFamiliarityLevel {
+  new_or_unfamiliar
+  limited_familiarity
+  developing_familiarity
+  established_familiarity
+  highly_established_familiarity
+  unknown
+}
+
+enum CurrentEquipmentFamiliarityConfidence {
+  estimated
+  moderate
+  high
+}
+
+enum CurrentEquipmentFamiliaritySource {
+  player
+  parent_or_guardian
+  coach
+  internal_staff
+  system_history
+  combined
+}
+
+enum TransitionShadowStudyStatus {
+  draft
+  prediction_captured
+  observation_active
+  observation_complete
+  cancelled
+  invalidated
+}
+
+enum TransitionObservationCheckpoint {
+  first_use
+  early_sessions
+  acclimation_period
+  custom
+}
+
+enum TransitionObservationSource {
+  player
+  parent_or_guardian
+  coach
+  internal_staff
+  combined
+}
+
+enum TransitionObservationConfidence {
+  low
+  moderate
+  high
+}
+
 enum PlayerTimelineEventType {
   player_created
   profile_updated
@@ -335,16 +389,18 @@ model Player {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
-  family              Family                     @relation(fields: [familyId], references: [id], onDelete: Cascade)
-  profile             PlayerProfile?
-  growthMeasurements  GrowthMeasurement[]
-  batMatchSessions    BatMatchSession[]
-  decisionSignals     DecisionSignal[]
-  recommendations     Recommendation[]
-  opportunityProfiles PlayerOpportunityProfile[]
-  decisionBooks       DecisionBook[]
-  timelineEvents      PlayerTimelineEvent[]
-  dnaProfiles         PlayerDNAProfile[]
+  family                      Family                              @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  profile                     PlayerProfile?
+  growthMeasurements          GrowthMeasurement[]
+  batMatchSessions            BatMatchSession[]
+  decisionSignals             DecisionSignal[]
+  recommendations             Recommendation[]
+  opportunityProfiles         PlayerOpportunityProfile[]
+  decisionBooks               DecisionBook[]
+  timelineEvents              PlayerTimelineEvent[]
+  dnaProfiles                 PlayerDNAProfile[]
+  equipmentFamiliarityRecords CurrentEquipmentFamiliarityRecord[]
+  transitionShadowStudies     TransitionExtendedShadowStudy[]
 
   @@index([familyId])
   @@index([graduationYear])
@@ -402,17 +458,20 @@ model Equipment {
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt
 
-  variants            EquipmentVariant[]
-  dnaProfiles         EquipmentDNAProfile[]
-  specifications      EquipmentSpecification[]
-  evidence            EquipmentEvidence[]
-  dnaEvidenceRecords  EquipmentDNAEvidenceRecord[]
-  dnaAttributeEvaluations EquipmentDNAAttributeEvaluation[]
-  fitProfiles         EquipmentFitProfile[]
-  personalities       EquipmentPersonality[]
-  sourceComparisons   EquipmentComparison[]    @relation("SourceEquipmentComparison")
-  targetComparisons   EquipmentComparison[]    @relation("TargetEquipmentComparison")
-  recommendationItems RecommendationItem[]
+  variants                        EquipmentVariant[]
+  dnaProfiles                     EquipmentDNAProfile[]
+  specifications                  EquipmentSpecification[]
+  evidence                        EquipmentEvidence[]
+  dnaEvidenceRecords              EquipmentDNAEvidenceRecord[]
+  dnaAttributeEvaluations         EquipmentDNAAttributeEvaluation[]
+  fitProfiles                     EquipmentFitProfile[]
+  personalities                   EquipmentPersonality[]
+  sourceComparisons               EquipmentComparison[]               @relation("SourceEquipmentComparison")
+  targetComparisons               EquipmentComparison[]               @relation("TargetEquipmentComparison")
+  recommendationItems             RecommendationItem[]
+  familiarityRecords              CurrentEquipmentFamiliarityRecord[]
+  currentTransitionShadowStudies  TransitionExtendedShadowStudy[]     @relation("CurrentTransitionShadowEquipment")
+  proposedTransitionShadowStudies TransitionExtendedShadowStudy[]     @relation("ProposedTransitionShadowEquipment")
 
   @@index([manufacturer])
   @@index([model])
@@ -433,10 +492,13 @@ model EquipmentVariant {
   sku          String?  @unique
   createdAt    DateTime @default(now())
 
-  equipment           Equipment            @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
-  recommendationItems RecommendationItem[]
-  dnaEvidenceRecords  EquipmentDNAEvidenceRecord[]
-  dnaAttributeEvaluations EquipmentDNAAttributeEvaluation[]
+  equipment                       Equipment                           @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  recommendationItems             RecommendationItem[]
+  dnaEvidenceRecords              EquipmentDNAEvidenceRecord[]
+  dnaAttributeEvaluations         EquipmentDNAAttributeEvaluation[]
+  familiarityRecords              CurrentEquipmentFamiliarityRecord[]
+  currentTransitionShadowStudies  TransitionExtendedShadowStudy[]     @relation("CurrentTransitionShadowVariant")
+  proposedTransitionShadowStudies TransitionExtendedShadowStudy[]     @relation("ProposedTransitionShadowVariant")
 
   @@index([equipmentId])
   @@map("equipment_variants")
@@ -623,9 +685,9 @@ model EquipmentComparison {
 }
 
 model EquipmentDNAEvidenceRecord {
-  id                         String                         @id @default(uuid()) @db.Uuid
-  equipmentId                String?                        @db.Uuid
-  equipmentVariantId         String?                        @db.Uuid
+  id                         String                           @id @default(uuid()) @db.Uuid
+  equipmentId                String?                          @db.Uuid
+  equipmentVariantId         String?                          @db.Uuid
   targetLevel                EquipmentDNATargetLevel
   attributeKey               String
   attributeDefinitionVersion String
@@ -642,12 +704,12 @@ model EquipmentDNAEvidenceRecord {
   status                     EquipmentDNAEvidenceRecordStatus @default(active)
   evaluatorType              EquipmentDNAEvaluatorType?
   evaluatorReference         String?
-  createdAt                  DateTime                       @default(now())
-  updatedAt                  DateTime                       @updatedAt
+  createdAt                  DateTime                         @default(now())
+  updatedAt                  DateTime                         @updatedAt
 
-  equipment       Equipment?                                @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
-  equipmentVariant EquipmentVariant?                        @relation(fields: [equipmentVariantId], references: [id], onDelete: Cascade)
-  evaluationLinks EquipmentDNAAttributeEvaluationEvidence[]
+  equipment        Equipment?                                @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  equipmentVariant EquipmentVariant?                         @relation(fields: [equipmentVariantId], references: [id], onDelete: Cascade)
+  evaluationLinks  EquipmentDNAAttributeEvaluationEvidence[]
 
   @@index([equipmentId])
   @@index([equipmentVariantId])
@@ -661,27 +723,27 @@ model EquipmentDNAEvidenceRecord {
 }
 
 model EquipmentDNAAttributeEvaluation {
-  id                         String                           @id @default(uuid()) @db.Uuid
-  equipmentId                String?                          @db.Uuid
-  equipmentVariantId         String?                          @db.Uuid
+  id                         String                                @id @default(uuid()) @db.Uuid
+  equipmentId                String?                               @db.Uuid
+  equipmentVariantId         String?                               @db.Uuid
   targetLevel                EquipmentDNATargetLevel
   attributeKey               String
   attributeDefinitionVersion String
   value                      Json
-  confidence                 EquipmentAttributeConfidence      @default(estimated)
+  confidence                 EquipmentAttributeConfidence          @default(estimated)
   evaluationMethod           EquipmentEvaluationMethod
-  evaluationVersion          Int                              @default(1)
+  evaluationVersion          Int                                   @default(1)
   status                     EquipmentDNAAttributeEvaluationStatus @default(draft)
   rationale                  String?
   evaluatedAt                DateTime?
   reviewDueAt                DateTime?
-  supersedesEvaluationId     String?                          @db.Uuid
-  createdAt                  DateTime                         @default(now())
-  updatedAt                  DateTime                         @updatedAt
+  supersedesEvaluationId     String?                               @db.Uuid
+  createdAt                  DateTime                              @default(now())
+  updatedAt                  DateTime                              @updatedAt
 
-  equipment       Equipment?                                  @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
-  equipmentVariant EquipmentVariant?                          @relation(fields: [equipmentVariantId], references: [id], onDelete: Cascade)
-  evidenceLinks   EquipmentDNAAttributeEvaluationEvidence[]
+  equipment        Equipment?                                @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  equipmentVariant EquipmentVariant?                         @relation(fields: [equipmentVariantId], references: [id], onDelete: Cascade)
+  evidenceLinks    EquipmentDNAAttributeEvaluationEvidence[]
 
   @@unique([equipmentId, equipmentVariantId, attributeKey, attributeDefinitionVersion, evaluationVersion])
   @@index([equipmentId])
@@ -805,6 +867,107 @@ model PlayerDNAProfile {
   @@index([scoringRuleVersion])
   @@index([inputHash])
   @@map("player_dna_profiles")
+}
+
+model CurrentEquipmentFamiliarityRecord {
+  id                 String                                @id @default(uuid()) @db.Uuid
+  playerId           String                                @db.Uuid
+  equipmentId        String                                @db.Uuid
+  equipmentVariantId String?                               @db.Uuid
+  level              CurrentEquipmentFamiliarityLevel
+  numericReference   Decimal?                              @db.Decimal(5, 2)
+  confidence         CurrentEquipmentFamiliarityConfidence
+  source             CurrentEquipmentFamiliaritySource
+  inputSnapshot      Json
+  evaluationReasons  Json
+  evaluationWarnings Json
+  modelVersion       String
+  capturedAt         DateTime
+  createdAt          DateTime                              @default(now())
+  updatedAt          DateTime                              @updatedAt
+
+  player           Player                          @relation(fields: [playerId], references: [id], onDelete: Restrict)
+  equipment        Equipment                       @relation(fields: [equipmentId], references: [id], onDelete: Restrict)
+  equipmentVariant EquipmentVariant?               @relation(fields: [equipmentVariantId], references: [id], onDelete: SetNull)
+  studies          TransitionExtendedShadowStudy[]
+
+  @@index([playerId])
+  @@index([equipmentId])
+  @@index([equipmentVariantId])
+  @@index([capturedAt])
+  @@index([modelVersion])
+  @@map("current_equipment_familiarity_records")
+}
+
+model TransitionExtendedShadowStudy {
+  id                           String                      @id @default(uuid()) @db.Uuid
+  studyKey                     String                      @unique
+  playerId                     String                      @db.Uuid
+  currentEquipmentId           String                      @db.Uuid
+  currentEquipmentVariantId    String?                     @db.Uuid
+  proposedEquipmentId          String                      @db.Uuid
+  proposedEquipmentVariantId   String?                     @db.Uuid
+  status                       TransitionShadowStudyStatus @default(draft)
+  studyVersion                 String
+  policyVersion                String
+  familiarityRecordId          String?                     @db.Uuid
+  predictionSnapshot           Json?
+  predictionInputHash          String?
+  predictionHash               String?
+  transitionModelVersion       String?
+  transitionPolicyVersion      String?
+  interpolationVersion         String?
+  predictedAt                  DateTime?
+  observationWindowStartedAt   DateTime?
+  observationWindowCompletedAt DateTime?
+  cancellationReason           String?
+  invalidationReason           String?
+  fixtureKind                  String?
+  createdAt                    DateTime                    @default(now())
+  updatedAt                    DateTime                    @updatedAt
+
+  player                   Player                                @relation(fields: [playerId], references: [id], onDelete: Restrict)
+  currentEquipment         Equipment                             @relation("CurrentTransitionShadowEquipment", fields: [currentEquipmentId], references: [id], onDelete: Restrict)
+  currentEquipmentVariant  EquipmentVariant?                     @relation("CurrentTransitionShadowVariant", fields: [currentEquipmentVariantId], references: [id], onDelete: SetNull)
+  proposedEquipment        Equipment                             @relation("ProposedTransitionShadowEquipment", fields: [proposedEquipmentId], references: [id], onDelete: Restrict)
+  proposedEquipmentVariant EquipmentVariant?                     @relation("ProposedTransitionShadowVariant", fields: [proposedEquipmentVariantId], references: [id], onDelete: SetNull)
+  familiarityRecord        CurrentEquipmentFamiliarityRecord?    @relation(fields: [familiarityRecordId], references: [id], onDelete: SetNull)
+  observations             TransitionExtendedShadowObservation[]
+
+  @@index([playerId])
+  @@index([status])
+  @@index([currentEquipmentId])
+  @@index([proposedEquipmentId])
+  @@index([createdAt])
+  @@index([predictedAt])
+  @@index([transitionModelVersion])
+  @@index([familiarityRecordId])
+  @@map("transition_extended_shadow_studies")
+}
+
+model TransitionExtendedShadowObservation {
+  id                    String                          @id @default(uuid()) @db.Uuid
+  studyId               String                          @db.Uuid
+  checkpoint            TransitionObservationCheckpoint
+  observedAt            DateTime
+  source                TransitionObservationSource
+  directlyWitnessed     Boolean
+  observationConfidence TransitionObservationConfidence
+  equipmentActuallyUsed Boolean
+  meaningfulUseOccurred Boolean
+  adjustmentObservation Json
+  sessionContext        Json?
+  notes                 String?
+  createdAt             DateTime                        @default(now())
+  updatedAt             DateTime                        @updatedAt
+
+  study TransitionExtendedShadowStudy @relation(fields: [studyId], references: [id], onDelete: Restrict)
+
+  @@index([studyId])
+  @@index([checkpoint])
+  @@index([observedAt])
+  @@index([source])
+  @@map("transition_extended_shadow_observations")
 }
 
 model BatMatchQuestion {

@@ -1,0 +1,131 @@
+{
+  "version": "1.0",
+  "evaluationMode": "standalone",
+  "sessionId": "demarini-standalone-physical-evaluation-01",
+  "equipmentId": "6cf0f7fa-c8c2-4ce7-a36e-6ad1c52cc56c",
+  "equipmentVariantId": "DEM-THE-GOODS-USA-30-20",
+  "evaluationDate": "2026-08-21T00:00:00.000Z",
+  "physicalVerification": {
+    "equipmentId": "6cf0f7fa-c8c2-4ce7-a36e-6ad1c52cc56c",
+    "equipmentVariantId": "DEM-THE-GOODS-USA-30-20",
+    "manufacturer": "DeMarini",
+    "model": "The Goods",
+    "modelYear": 2023,
+    "certification": "USA",
+    "lengthInches": 30,
+    "weightOunces": 20,
+    "dropWeight": -10,
+    "barrelDiameter": 2.625,
+    "source": "combined",
+    "verifiedAt": "2026-08-21T00:00:00.000Z",
+    "verifiedBy": "transition-operator",
+    "productIdentifier": "WBD2359010",
+    "confidence": "confident"
+  },
+  "equipmentCondition": "normal_used_condition",
+  "evaluator": {
+    "evaluatorId": "physical-evaluator-03",
+    "category": "experienced_player_evaluator"
+  },
+  "referenceContext": {
+    "referenceAvailable": false,
+    "reason": "no_suitable_verified_reference_available",
+    "notes": "Standalone evaluation intentionally performed without a reference bat to collect independent absolute categorical equipment observations."
+  },
+  "referenceEquipment": [],
+  "trialCounts": {
+    "drySwingTrialCount": 12,
+    "contactTrialCount": 12,
+    "referenceAlternationCount": 0
+  },
+  "rubricResponses": [
+    {
+      "attributeKey": "swing_effort",
+      "evaluatorConfidence": "high",
+      "limitations": [],
+      "dimensions": [
+        {
+          "key": "startup_demand",
+          "observation": "moderate"
+        },
+        {
+          "key": "rotational_demand",
+          "observation": "moderate"
+        },
+        {
+          "key": "barrel_redirect_demand",
+          "observation": "moderate"
+        }
+      ]
+    },
+    {
+      "attributeKey": "bat_control_support",
+      "evaluatorConfidence": "high",
+      "limitations": [],
+      "dimensions": [
+        {
+          "key": "directional_controllability",
+          "observation": "moderate"
+        },
+        {
+          "key": "barrel_path_manageability",
+          "observation": "moderate"
+        },
+        {
+          "key": "start_stop_controllability",
+          "observation": "low"
+        }
+      ]
+    },
+    {
+      "attributeKey": "forgiveness",
+      "evaluatorConfidence": "high",
+      "limitations": [],
+      "dimensions": [
+        {
+          "key": "off_center_response_consistency",
+          "observation": "moderate"
+        },
+        {
+          "key": "handle_side_miss_tolerance",
+          "observation": "low"
+        },
+        {
+          "key": "end_side_miss_tolerance",
+          "observation": "low"
+        },
+        {
+          "key": "response_degradation",
+          "observation": "high"
+        }
+      ]
+    },
+    {
+      "attributeKey": "sweet_spot_support",
+      "evaluatorConfidence": "high",
+      "limitations": [],
+      "dimensions": [
+        {
+          "key": "usable_contact_region",
+          "observation": "low"
+        },
+        {
+          "key": "centered_response_consistency",
+          "observation": "high"
+        },
+        {
+          "key": "near_center_response_consistency",
+          "observation": "moderate"
+        }
+      ]
+    }
+  ],
+  "limitations": [],
+  "notes": [
+    "Standalone Evaluation #1.",
+    "Evaluator did not use a reference bat during this session.",
+    "No unusual testing conditions were reported."
+  ],
+  "provenanceClassification": "real_observation",
+  "testingConditionsValid": true
+}

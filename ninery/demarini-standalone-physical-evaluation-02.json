@@ -1,0 +1,129 @@
+{
+  "version": "1.0",
+  "evaluationMode": "standalone",
+  "sessionId": "demarini-standalone-physical-evaluation-02",
+  "equipmentId": "6cf0f7fa-c8c2-4ce7-a36e-6ad1c52cc56c",
+  "equipmentVariantId": "DEM-THE-GOODS-USA-30-20",
+  "evaluationDate": "2026-08-21T00:00:00.000Z",
+  "physicalVerification": {
+    "equipmentId": "6cf0f7fa-c8c2-4ce7-a36e-6ad1c52cc56c",
+    "equipmentVariantId": "DEM-THE-GOODS-USA-30-20",
+    "manufacturer": "DeMarini",
+    "model": "The Goods",
+    "modelYear": 2023,
+    "certification": "USA",
+    "lengthInches": 30,
+    "weightOunces": 20,
+    "dropWeight": -10,
+    "barrelDiameter": 2.625,
+    "source": "combined",
+    "verifiedAt": "2026-08-21T00:00:00.000Z",
+    "verifiedBy": "transition-operator",
+    "productIdentifier": "WBD2359010",
+    "confidence": "confident"
+  },
+  "equipmentCondition": "normal_used_condition",
+  "evaluator": {
+    "evaluatorId": "physical-evaluator-04",
+    "category": "experienced_player_evaluator"
+  },
+  "referenceContext": {
+    "referenceAvailable": false,
+    "reason": "no_suitable_verified_reference_available",
+    "notes": "Standalone absolute evaluation performed without reference equipment."
+  },
+  "referenceEquipment": [],
+  "trialCounts": {
+    "drySwingTrialCount": 12,
+    "contactTrialCount": 12,
+    "referenceAlternationCount": 0
+  },
+  "rubricResponses": [
+    {
+      "attributeKey": "swing_effort",
+      "evaluatorConfidence": "medium",
+      "limitations": [],
+      "dimensions": [
+        {
+          "key": "startup_demand",
+          "observation": "high"
+        },
+        {
+          "key": "rotational_demand",
+          "observation": "high"
+        },
+        {
+          "key": "barrel_redirect_demand",
+          "observation": "high"
+        }
+      ]
+    },
+    {
+      "attributeKey": "bat_control_support",
+      "evaluatorConfidence": "medium",
+      "limitations": [],
+      "dimensions": [
+        {
+          "key": "directional_controllability",
+          "observation": "high"
+        },
+        {
+          "key": "barrel_path_manageability",
+          "observation": "moderate"
+        },
+        {
+          "key": "start_stop_controllability",
+          "observation": "low"
+        }
+      ]
+    },
+    {
+      "attributeKey": "forgiveness",
+      "evaluatorConfidence": "medium",
+      "limitations": [],
+      "dimensions": [
+        {
+          "key": "off_center_response_consistency",
+          "observation": "moderate"
+        },
+        {
+          "key": "handle_side_miss_tolerance",
+          "observation": "low"
+        },
+        {
+          "key": "end_side_miss_tolerance",
+          "observation": "low"
+        },
+        {
+          "key": "response_degradation",
+          "observation": "high"
+        }
+      ]
+    },
+    {
+      "attributeKey": "sweet_spot_support",
+      "evaluatorConfidence": "medium",
+      "limitations": [],
+      "dimensions": [
+        {
+          "key": "usable_contact_region",
+          "observation": "low"
+        },
+        {
+          "key": "centered_response_consistency",
+          "observation": "high"
+        },
+        {
+          "key": "near_center_response_consistency",
+          "observation": "high"
+        }
+      ]
+    }
+  ],
+  "limitations": [],
+  "notes": [
+    "Independent standalone absolute physical evaluation."
+  ],
+  "provenanceClassification": "real_observation",
+  "testingConditionsValid": true
+}

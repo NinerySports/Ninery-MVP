@@ -1,0 +1,77 @@
+{
+  "version": "1.0",
+  "evaluationMode": "comparative",
+  "sessionId": "example-demarini-omaha-comparative-session",
+  "equipmentId": "6cf0f7fa-c8c2-4ce7-a36e-6ad1c52cc56c",
+  "equipmentVariantId": "DEM-THE-GOODS-USA-30-20",
+  "evaluationDate": "2026-08-16T00:00:00.000Z",
+  "physicalVerification": {
+    "equipmentId": "6cf0f7fa-c8c2-4ce7-a36e-6ad1c52cc56c",
+    "equipmentVariantId": "DEM-THE-GOODS-USA-30-20",
+    "manufacturer": "DeMarini",
+    "model": "The Goods",
+    "modelYear": 2023,
+    "certification": "USA",
+    "lengthInches": 30,
+    "weightOunces": 20,
+    "dropWeight": -10,
+    "barrelDiameter": 2.625,
+    "source": "combined",
+    "verifiedAt": "2026-08-16T00:00:00.000Z",
+    "verifiedBy": "operator-safe-id",
+    "productIdentifier": "WBD2359010",
+    "confidence": "confident"
+  },
+  "equipmentCondition": "normal_used_condition",
+  "evaluator": {
+    "evaluatorId": "safe-evaluator-id",
+    "category": "internal_equipment_evaluator"
+  },
+  "referenceEquipment": [
+    {
+      "referenceType": "verified_external_reference",
+      "referenceId": "external-louisville-slugger-omaha-2023-usa-30-19",
+      "label": "2023 Louisville Slugger Omaha USA 30/19/-11",
+      "manufacturer": "Louisville Slugger",
+      "model": "Omaha",
+      "modelYear": 2023,
+      "certification": "USA",
+      "lengthInches": 30,
+      "weightOunces": 19,
+      "dropWeight": -11,
+      "barrelDiameter": 2.625,
+      "productIdentifier": "WBL26640101930",
+      "condition": "normal_used_condition",
+      "verificationSource": "combined",
+      "verifiedAt": "2026-08-16T00:00:00.000Z",
+      "verifiedBy": "operator-safe-id",
+      "identityVerified": true,
+      "limitations": [
+        "Reference differs by 1 oz and one drop unit from target equipment.",
+        "Reference is one-piece alloy while target is two-piece hybrid.",
+        "Reference is an evaluation instrument only and has no recommendation/catalog authority."
+      ]
+    }
+  ],
+  "trialCounts": {
+    "drySwingTrialCount": 8,
+    "contactTrialCount": 0,
+    "referenceAlternationCount": 3
+  },
+  "rubricResponses": [
+    {
+      "attributeKey": "swing_effort",
+      "evaluatorConfidence": "medium",
+      "limitations": ["Development example only; not real-world evidence."],
+      "dimensions": [
+        { "key": "startup_demand", "observation": "unable_to_assess", "referenceId": "external-louisville-slugger-omaha-2023-usa-30-19" },
+        { "key": "rotational_demand", "observation": "unable_to_assess", "referenceId": "external-louisville-slugger-omaha-2023-usa-30-19" },
+        { "key": "barrel_redirect", "observation": "unable_to_assess", "referenceId": "external-louisville-slugger-omaha-2023-usa-30-19" }
+      ]
+    }
+  ],
+  "limitations": ["development_fixture", "example_only", "not_real_world_evidence"],
+  "notes": ["Fill observations only after a genuine comparative physical session."],
+  "provenanceClassification": "development_fixture",
+  "testingConditionsValid": true
+}

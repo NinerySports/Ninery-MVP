@@ -1,0 +1,62 @@
+{
+  "id": "e84de3d8-607a-4a91-ae16-4d3bd470a401",
+  "actorId": "transition-operator",
+  "playerId": "bac8a2cb-2cef-4ef2-9057-53e925dea035",
+  "observationPeriodKey": "pilot-study-01-2026-08-icon-to-atlas",
+  "studyPurpose": "extended_shadow_validation",
+  "currentEquipmentVerification": {
+    "equipmentId": "f826c444-69ea-4815-b76f-f9918448a232",
+    "equipmentVariantId": "456bfd00-9b7f-4cf4-9fa7-04704fbbb143",
+    "lengthInches": 30,
+    "weightOunces": 22,
+    "dropWeight": -8,
+    "certification": "USA",
+    "verifiedAsActualCurrentPrimary": true,
+    "source": "parent_or_guardian",
+    "verifiedAt": "2026-08-13T18:26:00.000Z"
+  },
+  "proposedEquipmentVerification": {
+    "equipmentId": "66f59356-029f-4df7-9177-0d0f36ef3e9c",
+    "equipmentVariantId": "9e3ea4ea-fe8a-4923-b6a5-f573a2b7591c",
+    "lengthInches": 30,
+    "weightOunces": 22,
+    "dropWeight": -8,
+    "certification": "USA",
+    "expectedToBeUsed": true,
+    "availableForUse": false,
+    "sizeSpecificationMatched": true,
+    "source": "combined",
+    "verifiedAt": "2026-08-13T18:26:00.000Z"
+  },
+  "familiarityInput": {
+    "playerId": "bac8a2cb-2cef-4ef2-9057-53e925dea035",
+    "equipmentId": "f826c444-69ea-4815-b76f-f9918448a232",
+    "equipmentVariantId": "456bfd00-9b7f-4cf4-9fa7-04704fbbb143",
+    "regularUseFrequency": "multiple_times_weekly",
+    "usageContexts": [
+      "practice",
+      "games"
+    ],
+    "currentlyPrimaryEquipment": true,
+    "directlyReportedFamiliarity": "familiar",
+    "source": "parent_or_guardian",
+    "capturedAt": "2026-08-13T18:26:00.000Z"
+  },
+  "participationAcknowledgement": {
+    "version": "1.0",
+    "playerId": "bac8a2cb-2cef-4ef2-9057-53e925dea035",
+    "acknowledgementType": "parent_or_guardian_acknowledgement",
+    "acknowledgedByRole": "parent_or_guardian",
+    "acknowledgedAt": "2026-08-13T18:26:00.000Z",
+    "purposeAcknowledged": true,
+    "observationalNatureAcknowledged": true,
+    "noRecommendationImpactAcknowledged": true,
+    "voluntaryFeedbackAcknowledged": true,
+    "sourceReference": "pilot-study-01-parent-guardian-acknowledgement",
+    "capturedByActorId": "transition-operator"
+  },
+  "playerDNAProfileId": "26a6299b-5a07-4a41-9bef-6610969392c0",
+  "playerDNAVersion": "1.0.0",
+  "captureOrigin": "internal_guided_entry",
+  "createdAt": "2026-08-13T18:26:00.000Z"
+}

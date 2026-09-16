@@ -34,6 +34,7 @@ export type EquipmentDNAAttributeKey =
   | "sweet_spot_support"
   | "power_potential"
   | "barrel_stability"
+  | "predictability_support"
   | "transition_difficulty"
   | "confidence_building_potential"
   | "bat_control_support";

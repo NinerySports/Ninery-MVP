@@ -53,32 +53,6 @@ const demoBats = [
       ["EAS-HYPE-USA-31-23", "31.0", "23.0", -8, "349.99"]
     ]
   },
-  {
-    manufacturer: "Louisville Slugger",
-    model: "Atlas",
-    modelYear: 2026,
-    certification: "USA",
-    material: "alloy",
-    construction: "one-piece",
-    barrelDiameter: "2.63",
-    personality: ["stable-alloy", "Stable Alloy", "Predictable, balanced alloy profile with strong transition value."],
-    scores: {
-      "bat-control": 8.5,
-      "swing-balance": 8.4,
-      "swing-weight": 4.8,
-      "sweet-spot-size": 8.2,
-      "barrel-forgiveness": 8.0,
-      "power-potential": 8.1,
-      "confidence-building": 8.4,
-      "transition-friendliness": 8.8
-    },
-    variants: [
-      ["LS-ATLAS-USA-29-19", "29.0", "19.0", -10, "279.99"],
-      ["LS-ATLAS-USA-30-20", "30.0", "20.0", -10, "279.99"],
-      ["LS-ATLAS-USA-30-22", "30.0", "22.0", -8, "279.99"],
-      ["LS-ATLAS-USA-31-23", "31.0", "23.0", -8, "279.99"]
-    ]
-  }
 ];
 
 export async function seed() {

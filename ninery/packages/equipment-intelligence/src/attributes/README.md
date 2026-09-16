@@ -17,7 +17,7 @@ The current recommendation engine consumes normalized score attributes such as `
 ## Domains
 
 - `physical`: catalog and variant facts such as length, weight, drop, certification, barrel diameter, construction, and material
-- `performance`: evaluated bat behavior such as swing effort, forgiveness, sweet spot support, power potential, balance profile, and barrel stability
+- `performance`: evaluated bat behavior such as swing effort, forgiveness, sweet spot support, power potential, balance profile, predictability support, and barrel stability
 - `compatibility`: candidate fit signals that may depend on player context
 - `development`: attributes that explain how a bat supports player development goals
 
@@ -58,6 +58,7 @@ The registry keeps canonical snake_case keys while preserving current scoring an
 - `forgiveness` maps to `BARREL_FORGIVENESS`, seeded as `barrel-forgiveness`, and score attribute `barrelForgiveness`
 - `sweet_spot_support` maps to `SWEET_SPOT_SIZE`, seeded as `sweet-spot-size`, and score attribute `sweetSpotSize`
 - `power_potential` maps to `POWER_POTENTIAL`, seeded as `power-potential`, and score attribute `powerPotential`
+- `predictability_support` is a structured composite over lower-level Equipment DNA evaluations and must not copy legacy `confidenceBuilding`
 - `confidence_building_potential` maps to `CONFIDENCE_BUILDING`, seeded as `confidence-building`, and score attribute `confidenceBuilding`
 - `transition_difficulty` is related to the current `TRANSITION_FRIENDLINESS` score but is not a direct replacement
 
@@ -66,6 +67,14 @@ The registry keeps canonical snake_case keys while preserving current scoring an
 `transition_difficulty` is marked `experimental` with `attributeNature: "relational_candidate"` and is not recommendation-ready in version `1.0`.
 
 The reason is intentional: transition is partly about the bat, but also partly about the player. A drop change, BBCOR move, growth spurt, or confidence gap can make the same bat feel easy for one player and difficult for another. The existing `transitionFriendliness` score remains untouched for current recommendation behavior. Full transition fit should be owned by Compatibility Intelligence when player-relative scoring is ready.
+
+## Predictability Support Decision
+
+`predictability_support` is active, optional, equipment-level, and evaluated-intrinsic in version `1.0`.
+
+It describes how consistent and understandable the bat's response tends to feel from swing to swing. It is not a player confidence guarantee and is not a direct migration of legacy `confidenceBuilding`.
+
+The initial composite uses `forgiveness`, `sweet_spot_support`, and inverted `swing_effort` manageability. `balance_profile` is excluded because balance preference can be player-relative, and `confidence_building_potential` remains the historical mixed candidate that future Compatibility Intelligence should replace with player-specific confidence compatibility.
 
 ## Physical Fact Conventions
 

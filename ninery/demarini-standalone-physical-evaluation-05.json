@@ -1,0 +1,134 @@
+{
+  "version": "1.0",
+  "evaluationMode": "standalone",
+  "sessionId": "demarini-standalone-physical-evaluation-05",
+  "equipmentId": "6cf0f7fa-c8c2-4ce7-a36e-6ad1c52cc56c",
+  "equipmentVariantId": "DEM-THE-GOODS-USA-30-20",
+  "evaluationDate": "2026-08-26T00:00:00.000Z",
+  "physicalVerification": {
+    "equipmentId": "6cf0f7fa-c8c2-4ce7-a36e-6ad1c52cc56c",
+    "equipmentVariantId": "DEM-THE-GOODS-USA-30-20",
+    "manufacturer": "DeMarini",
+    "model": "The Goods",
+    "modelYear": 2023,
+    "certification": "USA",
+    "lengthInches": 30,
+    "weightOunces": 20,
+    "dropWeight": -10,
+    "barrelDiameter": 2.625,
+    "source": "combined",
+    "verifiedAt": "2026-08-26T00:00:00.000Z",
+    "verifiedBy": "transition-operator",
+    "productIdentifier": "WBD2359010",
+    "confidence": "confident"
+  },
+  "equipmentCondition": "normal_used_condition",
+  "evaluator": {
+    "evaluatorId": "physical-evaluator-07",
+    "category": "experienced_player_evaluator"
+  },
+  "referenceContext": {
+    "referenceAvailable": false,
+    "reason": "no_suitable_verified_reference_available",
+    "notes": "Standalone absolute targeted adjudication evaluation. No reference bat was used."
+  },
+  "referenceEquipment": [],
+  "trialCounts": {
+    "drySwingTrialCount": 12,
+    "contactTrialCount": 18,
+    "referenceAlternationCount": 0
+  },
+  "rubricResponses": [
+    {
+      "attributeKey": "swing_effort",
+      "evaluatorConfidence": "high",
+      "limitations": [],
+      "dimensions": [
+        {
+          "key": "startup_demand",
+          "observation": "moderate"
+        },
+        {
+          "key": "rotational_demand",
+          "observation": "moderate"
+        },
+        {
+          "key": "barrel_redirect_demand",
+          "observation": "moderate"
+        }
+      ]
+    },
+    {
+      "attributeKey": "bat_control_support",
+      "evaluatorConfidence": "high",
+      "limitations": [],
+      "dimensions": [
+        {
+          "key": "directional_controllability",
+          "observation": "moderate"
+        },
+        {
+          "key": "barrel_path_manageability",
+          "observation": "moderate"
+        },
+        {
+          "key": "start_stop_controllability",
+          "observation": "moderate"
+        }
+      ]
+    },
+    {
+      "attributeKey": "forgiveness",
+      "evaluatorConfidence": "high",
+      "limitations": [],
+      "dimensions": [
+        {
+          "key": "off_center_response_consistency",
+          "observation": "high"
+        },
+        {
+          "key": "handle_side_miss_tolerance",
+          "observation": "high"
+        },
+        {
+          "key": "end_side_miss_tolerance",
+          "observation": "moderate"
+        },
+        {
+          "key": "response_degradation",
+          "observation": "moderate"
+        }
+      ]
+    },
+    {
+      "attributeKey": "sweet_spot_support",
+      "evaluatorConfidence": "high",
+      "limitations": [],
+      "dimensions": [
+        {
+          "key": "usable_contact_region",
+          "observation": "moderate",
+          "notes": "Evaluator indicated that the usable contact region was moderate."
+        },
+        {
+          "key": "centered_response_consistency",
+          "observation": "high"
+        },
+        {
+          "key": "near_center_response_consistency",
+          "observation": "high"
+        }
+      ]
+    }
+  ],
+  "limitations": [],
+  "notes": [
+    "Genuine standalone targeted adjudication evaluation completed by physical-evaluator-07.",
+    "Evaluator was not provided results from prior evaluations.",
+    "Controlled contact testing included centered contact, modest handle-side misses, and modest end-side misses.",
+    "Evaluator indicated yes: the bat appeared to have a relatively narrow usable contact region while still producing strong or consistent response inside that region.",
+    "No additional narrative description was provided for the breadth-versus-quality observation."
+  ],
+  "provenanceClassification": "real_observation",
+  "testingConditionsValid": true
+}

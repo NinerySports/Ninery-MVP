@@ -3,6 +3,7 @@ export * from "./player-dna.application-service.js";
 export * from "./player-dna.errors.js";
 export * from "./player-dna-input.loader.js";
 export * from "./player-dna.service.js";
+export * from "./equipment-familiarity/index.js";
 export * from "./player-dna.types.js";
 export * from "./input-hash.js";
 export * from "./prisma-player-dna.repository.js";

@@ -10,6 +10,7 @@ import * as developmentStages from "./development-stages.seed.ts";
 import * as demoFamily from "./demo-family.seed.ts";
 import * as demoPlayer from "./demo-player.seed.ts";
 import * as sampleEquipment from "./sample-equipment.seed.ts";
+import * as atlasUsssaCatalog from "./atlas-usssa-catalog.seed.ts";
 
 const referenceSeeds = [
   ["manufacturers", manufacturers],
@@ -22,7 +23,10 @@ const referenceSeeds = [
   ["BatMatch questions", batmatchQuestions]
 ];
 
-const equipmentSeeds = [["sample equipment", sampleEquipment]];
+const equipmentSeeds = [
+  ["sample equipment", sampleEquipment],
+  ["Atlas USSSA catalog identity", atlasUsssaCatalog]
+];
 const demoSeeds = [
   ["demo family", demoFamily],
   ["demo player", demoPlayer]

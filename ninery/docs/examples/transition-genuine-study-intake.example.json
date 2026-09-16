@@ -1,0 +1,61 @@
+{
+  "id": "00000000-0000-0000-0000-000000000421",
+  "actorId": "transition-operator",
+  "playerId": "00000000-0000-0000-0000-000000000101",
+  "observationPeriodKey": "fictional-2026-08-transition-study",
+  "studyPurpose": "extended_shadow_validation",
+  "currentEquipmentVerification": {
+    "equipmentId": "00000000-0000-0000-0000-000000000201",
+    "equipmentVariantId": "00000000-0000-0000-0000-000000000202",
+    "lengthInches": 30,
+    "weightOunces": 22,
+    "dropWeight": -8,
+    "certification": "USA",
+    "verifiedAsActualCurrentPrimary": true,
+    "source": "combined",
+    "verifiedAt": "2026-08-09T00:00:00.000Z"
+  },
+  "proposedEquipmentVerification": {
+    "equipmentId": "00000000-0000-0000-0000-000000000301",
+    "equipmentVariantId": "00000000-0000-0000-0000-000000000302",
+    "lengthInches": 30,
+    "weightOunces": 22,
+    "dropWeight": -8,
+    "certification": "USA",
+    "expectedToBeUsed": true,
+    "availableForUse": true,
+    "sizeSpecificationMatched": true,
+    "source": "combined",
+    "verifiedAt": "2026-08-09T00:00:00.000Z"
+  },
+  "familiarityInput": {
+    "playerId": "00000000-0000-0000-0000-000000000101",
+    "equipmentId": "00000000-0000-0000-0000-000000000201",
+    "equipmentVariantId": "00000000-0000-0000-0000-000000000202",
+    "estimatedSessionsUsed": 24,
+    "estimatedWeeksUsed": 10,
+    "regularUseFrequency": "multiple_times_weekly",
+    "usageContexts": ["practice", "games"],
+    "currentlyPrimaryEquipment": true,
+    "directlyReportedFamiliarity": "familiar",
+    "source": "combined",
+    "capturedAt": "2026-08-09T00:00:00.000Z"
+  },
+  "participationAcknowledgement": {
+    "version": "1.0",
+    "playerId": "00000000-0000-0000-0000-000000000101",
+    "acknowledgementType": "internal_operational_authorization",
+    "acknowledgedByRole": "internal_staff",
+    "acknowledgedAt": "2026-08-09T00:00:00.000Z",
+    "purposeAcknowledged": true,
+    "observationalNatureAcknowledged": true,
+    "noRecommendationImpactAcknowledged": true,
+    "voluntaryFeedbackAcknowledged": true,
+    "sourceReference": "fictional-internal-reference",
+    "capturedByActorId": "transition-operator"
+  },
+  "playerDNAProfileId": "00000000-0000-0000-0000-000000000401",
+  "playerDNAVersion": "1.0.0",
+  "captureOrigin": "internal_guided_entry",
+  "createdAt": "2026-08-09T00:00:00.000Z"
+}

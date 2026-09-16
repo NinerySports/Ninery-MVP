@@ -1,0 +1,22 @@
+import { buildAtlasUsssaAcquisitionPilotReport } from "../../../equipment-intelligence/src/index.ts";
+
+const report = buildAtlasUsssaAcquisitionPilotReport();
+console.log("ATLAS USSSA REAL-SOURCE ACQUISITION PILOT");
+console.log(report.classification);
+console.log(`Version: ${report.version}`);
+console.log(`Equipment: ${report.target.equipmentId}`);
+console.log(`Variant: ${report.target.equipmentVariantId}`);
+console.log(`Sources: ${report.sourceCount}; documents: ${report.documentCount}; independent lineages: ${report.independentClaimGroupCount}`);
+console.log(`Raw claims: ${report.rawClaimCount}; normalized claims: ${report.normalizedClaimCount}`);
+console.log("Qualification:");
+for (const state of ["qualified", "context_only", "review_required", "not_eligible"] as const) console.log(`- ${state}: ${report.qualification[state]} (${report.percentages[state]}%)`);
+console.log(`Proposed in-memory evidence inputs: ${report.proposedEvidenceCount}`);
+console.log("Catalog comparison:");
+for (const item of report.catalogComparison) console.log(`- ${item}`);
+console.log("Construct coverage:");
+for (const item of report.constructCoverage) console.log(`- ${item.construct}: ${item.contextOnly ? `${item.contextOnly} context-only observation(s)` : "no useful external behavioral information"}`);
+console.log(`Taxonomy: ${report.taxonomyConclusion}`);
+console.log(`Qualification policy: ${report.qualificationPolicyConclusion}`);
+console.log(`Database writes: ${report.firewalls.databasePersistence ? "yes" : "no"}`);
+console.log(`Canonical evaluations created: ${report.firewalls.canonicalEvaluationsCreated}`);
+console.log(`Recommendation changes: ${report.firewalls.recommendationChanges}`);

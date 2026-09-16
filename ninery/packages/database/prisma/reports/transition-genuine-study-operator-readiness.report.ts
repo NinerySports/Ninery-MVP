@@ -1,0 +1,31 @@
+import { transitionGenuineOperatorReadinessReport } from "../../../recommendation-intelligence/src/index.ts";
+
+const report = transitionGenuineOperatorReadinessReport();
+
+console.log("Genuine Transition Study Operator Readiness v1.0");
+console.log("");
+console.log(`Delivery mode: ${report.deliveryMode}`);
+console.log(`Player lookup: ${report.playerLookup}`);
+console.log(`Equipment lookup: ${report.equipmentLookup}`);
+console.log(`Genuine intake preparation: ${report.genuineIntakePreparation}`);
+console.log(`Explicit commit confirmation: ${report.explicitCommitConfirmation}`);
+console.log(`Acknowledgement capture: ${report.acknowledgementCapture}`);
+console.log(`Familiarity capture: ${report.familiarityCapture}`);
+console.log(`Prospective v1.1 prediction: ${report.prospectiveV1_1Prediction}`);
+console.log(`Observation start: ${report.observationStart}`);
+console.log(`First-use entry: ${report.firstUseEntry}`);
+console.log(`Early-session entry: ${report.earlySessionEntry}`);
+console.log(`Acclimation entry: ${report.acclimationEntry}`);
+console.log(`Completion review: ${report.completionReview}`);
+console.log(`Completion: ${report.completion}`);
+console.log(`Cancellation: ${report.cancellation}`);
+console.log(`Invalidation: ${report.invalidation}`);
+console.log(`Audit: ${report.audit}`);
+console.log(`Dry run: ${report.dryRun}`);
+console.log(`Synthetic/genuine protection: ${report.syntheticGenuineProtection}`);
+console.log(`No fake genuine evidence: ${report.noFakeGenuineEvidence}`);
+console.log(`Model automatically changed: ${report.modelAutomaticallyChanged ? "yes" : "no"}`);
+console.log(`Live promotion automatically recommended: ${report.livePromotionAutomaticallyRecommended ? "yes" : "no"}`);
+console.log("");
+console.log("Operator readiness verdict:");
+console.log(report.operatorReadinessVerdict);

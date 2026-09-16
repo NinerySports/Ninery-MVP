@@ -323,6 +323,27 @@ const equipmentDNAAttributeDefinitions = [
     }
   },
   {
+    key: "predictability_support",
+    version: EQUIPMENT_DNA_ATTRIBUTE_REGISTRY_VERSION,
+    displayName: "Predictability Support",
+    shortLabel: "Predictable",
+    domain: "performance",
+    dataType: "ordinal",
+    allowedValues: fivePointSupportValues,
+    description: "The degree to which a bat's behavior and performance feedback remain stable, understandable, and repeatable across typical swings, contact locations, and mishit outcomes.",
+    parentExplanation: "How consistent and understandable the bat's response tends to feel from swing to swing.",
+    recommendationImpact: "medium",
+    evidenceRequirement: "combined_evidence",
+    requiredForRecommendationReady: false,
+    applicableLevel: "equipment",
+    status: "active",
+    attributeNature: "evaluated_intrinsic",
+    order: 145,
+    compatibility: {
+      notes: "Equipment-side replacement for the intrinsic portion of legacy confidenceBuilding. It must not be treated as player confidence or copied directly from CONFIDENCE_BUILDING."
+    }
+  },
+  {
     key: "confidence_building_potential",
     version: EQUIPMENT_DNA_ATTRIBUTE_REGISTRY_VERSION,
     displayName: "Confidence Building Potential",

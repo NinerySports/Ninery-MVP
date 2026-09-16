@@ -228,6 +228,17 @@ Before public launch:
 
 ## Development
 
+## Current Equipment Familiarity
+
+Ticket #038 adds the Current Equipment Familiarity model under `src/equipment-familiarity`.
+
+- Model version: `CURRENT_EQUIPMENT_FAMILIARITY_MODEL_VERSION = "1.0"`
+- Levels: `new_or_unfamiliar`, `limited_familiarity`, `developing_familiarity`, `established_familiarity`, `highly_established_familiarity`, `unknown`
+- Inputs may include first and most recent use dates, estimated sessions and weeks, regular use frequency, usage contexts, primary-equipment status, direct familiarity report, source, and capture time.
+- Equipment ownership alone is not familiarity. If ownership is the only signal, the model returns `unknown` with estimated confidence.
+- The ordinal level is authoritative. The optional 0-100 numeric reference is exposed only for diagnostics and does not use a hidden midpoint for missing data.
+- Conflicting reports reduce confidence and preserve a warning for downstream validation.
+
 ```bash
 pnpm --filter @ninery/player-intelligence build
 pnpm --filter @ninery/player-intelligence test

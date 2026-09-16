@@ -1,0 +1,175 @@
+{
+  "version": "1.0",
+  "evaluationMode": "comparative",
+  "sessionId": "demarini-omaha-physical-evaluation-01",
+  "equipmentId": "6cf0f7fa-c8c2-4ce7-a36e-6ad1c52cc56c",
+  "equipmentVariantId": "DEM-THE-GOODS-USA-30-20",
+  "evaluationDate": "2026-08-17T00:00:00.000Z",
+  "physicalVerification": {
+    "equipmentId": "6cf0f7fa-c8c2-4ce7-a36e-6ad1c52cc56c",
+    "equipmentVariantId": "DEM-THE-GOODS-USA-30-20",
+    "manufacturer": "DeMarini",
+    "model": "The Goods",
+    "modelYear": 2023,
+    "certification": "USA",
+    "lengthInches": 30,
+    "weightOunces": 20,
+    "dropWeight": -10,
+    "barrelDiameter": 2.625,
+    "source": "combined",
+    "verifiedAt": "2026-08-17T00:00:00.000Z",
+    "verifiedBy": "transition-operator",
+    "productIdentifier": "WBD2359010",
+    "confidence": "confident"
+  },
+  "equipmentCondition": "normal_used_condition",
+  "evaluator": {
+    "evaluatorId": "transition-operator",
+    "category": "internal_equipment_evaluator"
+  },
+  "referenceEquipment": [
+    {
+      "referenceType": "verified_external_reference",
+      "referenceId": "external-louisville-slugger-omaha-2023-usa-30-19",
+      "label": "2023 Louisville Slugger Omaha USA 30/19/-11",
+      "manufacturer": "Louisville Slugger",
+      "model": "Omaha",
+      "modelYear": 2023,
+      "certification": "USA",
+      "lengthInches": 30,
+      "weightOunces": 19,
+      "dropWeight": -11,
+      "barrelDiameter": 2.625,
+      "productIdentifier": "WBL266401030",
+      "condition": "normal_used_condition",
+      "verificationSource": "combined",
+      "verifiedAt": "2026-08-17T00:00:00.000Z",
+      "verifiedBy": "transition-operator",
+      "identityVerified": true,
+      "limitations": [
+        "Reference differs by 1 oz and one drop unit from target equipment.",
+        "Reference is one-piece alloy while target is two-piece hybrid.",
+        "Reference is an evaluation instrument only and has no recommendation/catalog authority."
+      ]
+    }
+  ],
+  "trialCounts": {
+    "drySwingTrialCount": 12,
+    "contactTrialCount": 12,
+    "referenceAlternationCount": 3
+  },
+  "rubricResponses": [
+    {
+      "attributeKey": "swing_effort",
+      "evaluatorConfidence": "medium",
+      "limitations": [
+        "Reference bat is 1 oz lighter and one drop unit different from target equipment."
+      ],
+      "dimensions": [
+        {
+          "key": "startup_demand",
+          "observation": "somewhat_more",
+          "referenceId": "external-louisville-slugger-omaha-2023-usa-30-19"
+        },
+        {
+          "key": "rotational_demand",
+          "observation": "somewhat_more",
+          "referenceId": "external-louisville-slugger-omaha-2023-usa-30-19"
+        },
+        {
+          "key": "barrel_redirect",
+          "observation": "clearly_more",
+          "referenceId": "external-louisville-slugger-omaha-2023-usa-30-19"
+        }
+      ]
+    },
+    {
+      "attributeKey": "bat_control_support",
+      "evaluatorConfidence": "medium",
+      "limitations": [
+        "Reference bat is 1 oz lighter and one drop unit different from target equipment."
+      ],
+      "dimensions": [
+        {
+          "key": "direction_changes",
+          "observation": "somewhat_less",
+          "referenceId": "external-louisville-slugger-omaha-2023-usa-30-19"
+        },
+        {
+          "key": "start_stop_manageability",
+          "observation": "somewhat_less",
+          "referenceId": "external-louisville-slugger-omaha-2023-usa-30-19"
+        },
+        {
+          "key": "path_consistency",
+          "observation": "somewhat_less",
+          "referenceId": "external-louisville-slugger-omaha-2023-usa-30-19"
+        }
+      ]
+    },
+    {
+      "attributeKey": "forgiveness",
+      "evaluatorConfidence": "medium",
+      "limitations": [
+        "Reference bat differs in weight, drop, and construction from target equipment."
+      ],
+      "dimensions": [
+        {
+          "key": "varied_contact_regions",
+          "observation": "somewhat_less",
+          "referenceId": "external-louisville-slugger-omaha-2023-usa-30-19"
+        },
+        {
+          "key": "mishit_response",
+          "observation": "somewhat_less",
+          "referenceId": "external-louisville-slugger-omaha-2023-usa-30-19"
+        },
+        {
+          "key": "vibration_feedback",
+          "observation": "somewhat_more",
+          "referenceId": "external-louisville-slugger-omaha-2023-usa-30-19"
+        }
+      ]
+    },
+    {
+      "attributeKey": "sweet_spot_support",
+      "evaluatorConfidence": "medium",
+      "limitations": [
+        "Reference bat differs in weight, drop, and construction from target equipment."
+      ],
+      "dimensions": [
+        {
+          "key": "usable_response_region",
+          "observation": "somewhat_less",
+          "referenceId": "external-louisville-slugger-omaha-2023-usa-30-19"
+        },
+        {
+          "key": "barrel_response_consistency",
+          "observation": "somewhat_less",
+          "referenceId": "external-louisville-slugger-omaha-2023-usa-30-19"
+        },
+        {
+          "key": "contact_location_variation",
+          "observation": "somewhat_less",
+          "referenceId": "external-louisville-slugger-omaha-2023-usa-30-19"
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "Reference bat is 1 oz lighter and one drop unit different from target equipment.",
+    "Reference is one-piece alloy while target is two-piece hybrid.",
+    "Behavioral observations are comparative physical-evaluation observations and not player compatibility conclusions."
+  ],
+  "notes": [
+    "Real structured comparative physical evaluation.",
+    "Target and reference each completed 12 dry swings and 12 contact trials.",
+    "DeMarini required more startup and rotational effort and substantially more barrel redirect effort than the Omaha.",
+    "DeMarini was more difficult to direct and somewhat more difficult to maintain on a consistent path.",
+    "Omaha appeared more forgiving across varied and mishit contact.",
+    "DeMarini produced more favorable vibration feedback on imperfect contact.",
+    "DeMarini appeared to have a smaller and less consistent usable response region."
+  ],
+  "provenanceClassification": "real_observation",
+  "testingConditionsValid": true
+}

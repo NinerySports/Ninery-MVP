@@ -61,27 +61,28 @@ export class PrismaEquipmentDNAEvaluationRepository implements EquipmentDNAEvalu
   constructor(private readonly prisma: PrismaLike) {}
 
   async createEvidence(input: CreateEquipmentDNAEvidenceRecordInput): Promise<EquipmentDNAEvidenceRecord> {
+    const data: Prisma.EquipmentDNAEvidenceRecordUncheckedCreateInput = {
+      equipmentId: input.equipmentId,
+      equipmentVariantId: input.equipmentVariantId,
+      targetLevel: toPrismaTargetLevel(input.targetLevel),
+      attributeKey: input.attributeKey,
+      attributeDefinitionVersion: input.attributeDefinitionVersion,
+      sourceType: toPrismaSourceType(input.sourceType),
+      sourceName: input.sourceName,
+      sourceReference: input.sourceReference,
+      sourceDate: input.sourceDate,
+      retrievedAt: input.retrievedAt,
+      method: toPrismaEvaluationMethod(input.method),
+      ...(input.rawValue !== undefined ? { rawValue: toPrismaJson(input.rawValue) } : {}),
+      ...(input.normalizedValue !== undefined ? { normalizedValue: toPrismaJson(input.normalizedValue) } : {}),
+      unit: input.unit,
+      notes: input.notes,
+      status: toPrismaEvidenceStatus(input.status),
+      evaluatorType: input.evaluatorType ? toPrismaEvaluatorType(input.evaluatorType) : undefined,
+      evaluatorReference: input.evaluatorReference
+    };
     const record = await this.prisma.equipmentDNAEvidenceRecord.create({
-      data: {
-        equipmentId: input.equipmentId,
-        equipmentVariantId: input.equipmentVariantId,
-        targetLevel: toPrismaTargetLevel(input.targetLevel),
-        attributeKey: input.attributeKey,
-        attributeDefinitionVersion: input.attributeDefinitionVersion,
-        sourceType: toPrismaSourceType(input.sourceType),
-        sourceName: input.sourceName,
-        sourceReference: input.sourceReference,
-        sourceDate: input.sourceDate,
-        retrievedAt: input.retrievedAt,
-        method: toPrismaEvaluationMethod(input.method),
-        ...(input.rawValue !== undefined ? { rawValue: toPrismaJson(input.rawValue) } : {}),
-        ...(input.normalizedValue !== undefined ? { normalizedValue: toPrismaJson(input.normalizedValue) } : {}),
-        unit: input.unit,
-        notes: input.notes,
-        status: toPrismaEvidenceStatus(input.status),
-        evaluatorType: input.evaluatorType ? toPrismaEvaluatorType(input.evaluatorType) : undefined,
-        evaluatorReference: input.evaluatorReference
-      }
+      data
     });
     return fromEvidenceRecordRow(record);
   }
@@ -113,23 +114,24 @@ export class PrismaEquipmentDNAEvaluationRepository implements EquipmentDNAEvalu
   async createDraftEvaluation(
     input: CreateEquipmentDNAAttributeEvaluationInput
   ): Promise<EquipmentDNAAttributeEvaluation> {
+    const data: Prisma.EquipmentDNAAttributeEvaluationUncheckedCreateInput = {
+      equipmentId: input.equipmentId,
+      equipmentVariantId: input.equipmentVariantId,
+      targetLevel: toPrismaTargetLevel(input.targetLevel),
+      attributeKey: input.attributeKey,
+      attributeDefinitionVersion: input.attributeDefinitionVersion,
+      value: toPrismaRequiredJson(input.value),
+      confidence: toPrismaConfidence(input.confidence),
+      evaluationMethod: toPrismaEvaluationMethod(input.evaluationMethod),
+      evaluationVersion: input.evaluationVersion,
+      status: toPrismaEvaluationStatus(input.status),
+      rationale: input.rationale,
+      evaluatedAt: input.evaluatedAt,
+      reviewDueAt: input.reviewDueAt,
+      supersedesEvaluationId: input.supersedesEvaluationId
+    };
     const record = await this.prisma.equipmentDNAAttributeEvaluation.create({
-      data: {
-        equipmentId: input.equipmentId,
-        equipmentVariantId: input.equipmentVariantId,
-        targetLevel: toPrismaTargetLevel(input.targetLevel),
-        attributeKey: input.attributeKey,
-        attributeDefinitionVersion: input.attributeDefinitionVersion,
-        value: toPrismaRequiredJson(input.value),
-        confidence: toPrismaConfidence(input.confidence),
-        evaluationMethod: toPrismaEvaluationMethod(input.evaluationMethod),
-        evaluationVersion: input.evaluationVersion,
-        status: toPrismaEvaluationStatus(input.status),
-        rationale: input.rationale,
-        evaluatedAt: input.evaluatedAt,
-        reviewDueAt: input.reviewDueAt,
-        supersedesEvaluationId: input.supersedesEvaluationId
-      }
+      data
     });
     return fromEvaluationRow(record);
   }

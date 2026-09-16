@@ -1,0 +1,67 @@
+{
+  "version": "1.0",
+  "evaluationMode": "standalone",
+  "sessionId": "example-standalone-session-001",
+  "equipmentId": "example-equipment-id",
+  "equipmentVariantId": "example-variant-id",
+  "evaluationDate": "2026-08-15T00:00:00.000Z",
+  "physicalVerification": {
+    "equipmentId": "example-equipment-id",
+    "equipmentVariantId": "example-variant-id",
+    "manufacturer": "Example Manufacturer",
+    "model": "Example Model",
+    "modelYear": 2026,
+    "certification": "USA",
+    "lengthInches": 30,
+    "weightOunces": 20,
+    "dropWeight": -10,
+    "barrelDiameter": 2.625,
+    "source": "combined",
+    "verifiedAt": "2026-08-15T00:00:00.000Z",
+    "verifiedBy": "operator-safe-id",
+    "productIdentifier": "EXAMPLE-ONLY",
+    "confidence": "confident"
+  },
+  "equipmentCondition": "normal_used_condition",
+  "evaluator": {
+    "evaluatorId": "safe-evaluator-id",
+    "category": "internal_equipment_evaluator"
+  },
+  "referenceContext": {
+    "referenceAvailable": false,
+    "reason": "no_suitable_verified_reference_available",
+    "notes": "Example only. No verified comparable reference bat is physically available."
+  },
+  "referenceEquipment": [],
+  "trialCounts": {
+    "drySwingTrialCount": 8,
+    "contactTrialCount": 0,
+    "referenceAlternationCount": 0
+  },
+  "rubricResponses": [
+    {
+      "attributeKey": "swing_effort",
+      "evaluatorConfidence": "medium",
+      "limitations": ["Example only; not real-world evidence."],
+      "dimensions": [
+        { "key": "startup_demand", "observation": "unable_to_assess" },
+        { "key": "rotational_demand", "observation": "unable_to_assess" },
+        { "key": "barrel_redirect_demand", "observation": "unable_to_assess" }
+      ]
+    },
+    {
+      "attributeKey": "bat_control_support",
+      "evaluatorConfidence": "medium",
+      "limitations": ["Example only; not real-world evidence."],
+      "dimensions": [
+        { "key": "directional_controllability", "observation": "unable_to_assess" },
+        { "key": "barrel_path_manageability", "observation": "unable_to_assess" },
+        { "key": "start_stop_controllability", "observation": "unable_to_assess" }
+      ]
+    }
+  ],
+  "limitations": ["development_fixture", "example_only", "not_real_world_evidence"],
+  "notes": ["Fill observations only after a real standalone physical session."],
+  "provenanceClassification": "development_fixture",
+  "testingConditionsValid": true
+}

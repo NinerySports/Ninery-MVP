@@ -17,7 +17,7 @@ test("registry exposes the MVP version and unique ordered definitions", () => {
   const definitions = getEquipmentDNAAttributeDefinitions();
 
   assert.equal(EQUIPMENT_DNA_ATTRIBUTE_REGISTRY_VERSION, "1.0");
-  assert.equal(definitions.length, 16);
+  assert.equal(definitions.length, 17);
   assert.deepEqual(validateEquipmentDNAAttributeRegistry(), []);
   assert.deepEqual(
     definitions.map((definition) => definition.order),
@@ -44,6 +44,7 @@ test("registry contains the canonical MVP bat attribute keys", () => {
       "power_potential",
       "barrel_stability",
       "transition_difficulty",
+      "predictability_support",
       "confidence_building_potential",
       "bat_control_support"
     ]
@@ -113,6 +114,17 @@ test("transition difficulty is a non-required relational candidate", () => {
   assert.equal(transitionDifficulty?.attributeNature, "relational_candidate");
   assert.equal(transitionDifficulty?.requiredForRecommendationReady, false);
   assert.match(transitionDifficulty?.parentExplanation ?? "", /player/i);
+});
+
+test("predictability support is active, optional, and equipment-owned", () => {
+  const predictability = getEquipmentDNAAttributeDefinition("predictability_support");
+
+  assert.equal(predictability?.status, "active");
+  assert.equal(predictability?.attributeNature, "evaluated_intrinsic");
+  assert.equal(predictability?.applicableLevel, "equipment");
+  assert.equal(predictability?.requiredForRecommendationReady, false);
+  assert.match(predictability?.description ?? "", /stable, understandable, and repeatable/);
+  assert.doesNotMatch(predictability?.parentExplanation ?? "", /confidence guaranteed/i);
 });
 
 test("numeric validation enforces bounds, types, and integer rules", () => {

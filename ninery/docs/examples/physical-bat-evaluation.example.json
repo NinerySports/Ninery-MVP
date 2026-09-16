@@ -1,0 +1,64 @@
+{
+  "version": "1.0",
+  "sessionId": "example-physical-session-001",
+  "equipmentId": "example-equipment-id",
+  "equipmentVariantId": "example-variant-id",
+  "evaluationDate": "2026-08-15T00:00:00.000Z",
+  "physicalVerification": {
+    "equipmentId": "example-equipment-id",
+    "equipmentVariantId": "example-variant-id",
+    "manufacturer": "Example Manufacturer",
+    "model": "Example Model",
+    "modelYear": 2026,
+    "certification": "USA",
+    "lengthInches": 30,
+    "weightOunces": 20,
+    "dropWeight": -10,
+    "barrelDiameter": 2.625,
+    "source": "combined",
+    "verifiedAt": "2026-08-15T00:00:00.000Z",
+    "verifiedBy": "operator-safe-id",
+    "productIdentifier": "EXAMPLE-ONLY",
+    "confidence": "confident"
+  },
+  "equipmentCondition": "normal_used_condition",
+  "evaluator": {
+    "evaluatorId": "safe-evaluator-id",
+    "category": "internal_equipment_evaluator"
+  },
+  "referenceEquipment": [
+    {
+      "referenceId": "example-reference-bat",
+      "equipmentId": "example-reference-equipment-id",
+      "equipmentVariantId": "example-reference-variant-id",
+      "label": "Example verified reference bat",
+      "certification": "USA",
+      "lengthInches": 30,
+      "weightOunces": 20,
+      "dropWeight": -10,
+      "identityVerified": true
+    }
+  ],
+  "trialCounts": {
+    "drySwingTrialCount": 8,
+    "contactTrialCount": 8,
+    "referenceAlternationCount": 3
+  },
+  "rubricResponses": [
+    {
+      "attributeKey": "swing_effort",
+      "canonicalInterpretation": "moderate",
+      "evaluatorConfidence": "medium",
+      "limitations": ["Example file only; not real-world evidence."],
+      "dimensions": [
+        { "key": "startup_demand", "observation": "similar", "referenceId": "example-reference-bat" },
+        { "key": "rotational_demand", "observation": "similar", "referenceId": "example-reference-bat" },
+        { "key": "barrel_redirect", "observation": "somewhat_more", "referenceId": "example-reference-bat" }
+      ]
+    }
+  ],
+  "limitations": ["Development example only."],
+  "notes": ["Do not use this as genuine equipment evidence."],
+  "provenanceClassification": "development_fixture",
+  "testingConditionsValid": true
+}
