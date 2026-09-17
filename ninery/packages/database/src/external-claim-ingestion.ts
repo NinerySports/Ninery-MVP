@@ -23,7 +23,7 @@ export const CONTAMINATED_ATLAS_VARIANT_ID = "a485a596-ea15-4622-ac2e-452b7fd9c9
 export type ExternalClaimIngestionInput = {
   readonly source: { readonly stableKey: string; readonly displayName: string; readonly sourceType: EquipmentSourceType; readonly publisherIdentity?: string; readonly sourceVersion: string };
   readonly document: { readonly sourceReference: string; readonly documentType: "product_page" | "specification_sheet" | "retailer_page" | "review_article" | "review_video_transcript" | "certification_listing"; readonly title: string; readonly capturedAt: Date; readonly publishedAt?: Date; readonly modelYear?: number; readonly availability: "available" | "unavailable" | "historical" | "unknown"; readonly boundedContent: string; readonly revisionLabel?: string };
-  readonly extraction: { readonly method: "manual" | "deterministic_parser" | "ai_assisted"; readonly extractorType: "human" | "software" | "ai_model"; readonly extractorId: string; readonly extractorVersion: string; readonly schemaVersion: string; readonly providerModelId?: string; readonly executedAt: Date };
+  readonly extraction: { readonly logicalRunKey: string; readonly method: "manual" | "deterministic_parser" | "ai_assisted"; readonly extractorType: "human" | "software" | "ai_model"; readonly extractorId: string; readonly extractorVersion: string; readonly schemaVersion: string; readonly providerModelId?: string; readonly executedAt: Date };
   readonly targetIdentity: EquipmentClaimIdentityAssertion;
   readonly claims: readonly ExternalClaimProposal[];
 };
@@ -64,15 +64,22 @@ export type ExternalClaimReviewReadyCase = {
   readonly equipmentId?: string;
   readonly equipmentVariantId?: string;
   readonly sourceName: string;
+  readonly sourceStableKey: string;
+  readonly sourceType: EquipmentSourceType;
+  readonly publisherIdentity?: string;
+  readonly documentId: string;
   readonly documentReference: string;
+  readonly documentRevision: string;
   readonly rawSourceWording?: string;
-  readonly normalizedProposal: { readonly claimKey: string; readonly value: unknown; readonly unit?: string };
-  readonly extraction: { readonly method: string; readonly extractorId: string; readonly extractorVersion: string; readonly providerModelId?: string };
+  readonly sourceLocation?: string;
+  readonly normalizedProposal: { readonly claimKey: string; readonly value: unknown; readonly unit?: string; readonly method: string; readonly version: string; readonly vocabularyKnown: boolean; readonly evidenceClass: MultiSourceEvidenceClass | "unclassified" };
+  readonly extraction: { readonly runId: string; readonly logicalRunKey: string; readonly method: string; readonly extractorId: string; readonly extractorVersion: string; readonly providerModelId?: string; readonly executedAt: Date };
   readonly identityCertainty: EquipmentIdentityCertainty;
   readonly dependencyState: EquipmentClaimDependencyType;
   readonly suspectedSyndication: boolean;
   readonly proposedConstruct?: string;
   readonly mappingConfidence?: string;
+  readonly mappingVersion?: string;
   readonly qualificationState: EquipmentClaimQualificationAssessment["state"];
   readonly historicalQualificationState: EquipmentClaimQualificationAssessment["state"];
   readonly current: boolean;
@@ -144,22 +151,27 @@ function buildPersistenceUnit(input: ExternalClaimIngestionInput, claim: Externa
   rejectCallerReviewShortcuts(claim);
   const evidenceClassUnclassified = requiresUnclassifiedEvidenceProposal(claim);
   const persistedEvidenceClass = evidenceClassUnclassified ? "unclassified" as const : claim.normalization.evidenceClass;
-  const contentFingerprint = hash(input.document.boundedContent);
-  const sourceId = uuid(`source:${trusted.source.stableKey}`);
-  const documentId = uuid(`document:${sourceId}:${input.document.sourceReference}:${contentFingerprint}:${input.document.availability}`);
-  const extractionRunId = uuid(`extraction:${documentId}:${input.extraction.method}:${input.extraction.extractorId}:${input.extraction.extractorVersion}:${input.extraction.schemaVersion}:${input.extraction.providerModelId ?? "none"}`);
-  const identityAssertionId = uuid(`identity:${stable(trusted.identity)}`);
-  const rawClaimId = uuid(`raw:${stable({ extractionRunId, externalClaimKey: claim.externalClaimKey, rawText: claim.rawText, rawStructuredValue: claim.rawStructuredValue, claimType: claim.claimType, sourceLocation: claim.sourceLocation, identity: claim.identity, limitations: [...new Set(claim.limitations ?? [])].sort() })}`);
-  const normalizedClaimId = uuid(`normalized:${stable({ rawClaimId, claimKey: claim.normalization.claimKey, value: claim.normalization.value, unit: claim.normalization.unit, originalValue: claim.normalization.originalValue, originalUnit: claim.normalization.originalUnit, method: claim.normalization.method, version: claim.normalization.version, vocabularyKnown: claim.normalization.vocabularyKnown, evidenceClass: persistedEvidenceClass, limitations: [...new Set(claim.limitations ?? [])].sort() })}`);
-  const dependencyAssessmentId = uuid(`dependency:${stable({ rawClaimId, type: claim.dependency.type, upstreamClaimId: claim.dependency.upstreamClaimId, rationale: claim.dependency.rationale, version: "1.0" })}`);
-  const constructName = claim.construct?.proposedConstruct ?? `not_applicable:${claim.normalization.claimKey}`;
-  const constructRelationshipId = uuid(`construct:${stable({ normalizedClaimId, constructName, method: claim.construct?.method ?? "keyword_candidate", confidence: claim.construct?.confidence ?? "unmapped", version: claim.construct?.version ?? CONSTRUCT_MAPPING_VERSION, rationale: claim.construct?.rationale, role: claim.claimType === "marketing_claim" ? "not_applicable" : "candidate_only" })}`);
-  const qualificationDecisionId = uuid(`qualification:${stable({ normalizedClaimId, identityAssertionId, dependencyAssessmentId, constructRelationshipId, contractVersion: "1.0" })}`);
-  const idempotencyKey = `ingestion:${qualificationDecisionId}`;
-  const semanticFingerprint = hash(stable({ version: EXTERNAL_CLAIM_SEMANTIC_FINGERPRINT_VERSION, sourceId, documentId, extractionRunId, identityAssertionId, rawClaimId, normalizedClaimId, dependencyAssessmentId, constructRelationshipId, qualificationDecisionId }));
   const ai = input.extraction.method === "ai_assisted" || input.extraction.extractorType === "ai_model";
   const dependency = governedDependency(claim, ai);
   const identity = governedIdentity(trusted.identity, input.targetIdentity);
+  const claimLimitations = [...new Set(claim.limitations ?? [])].sort();
+  const rawLimitations = [...new Set([...claimLimitations, ...trusted.blockers])].sort();
+  const contentFingerprint = hash(input.document.boundedContent);
+  const sourceId = uuid(`source:${trusted.source.stableKey}`);
+  const documentRevision = revision(input.document.revisionLabel, contentFingerprint);
+  const documentId = uuid(`document:${stable({ sourceId, sourceReference: input.document.sourceReference, contentFingerprint, documentType: input.document.documentType, title: input.document.title, publishedAt: input.document.publishedAt?.toISOString(), modelYear: input.document.modelYear, revision: documentRevision, availability: input.document.availability })}`);
+  const extractionRunId = uuid(`extraction:${stable({ documentId, logicalRunKey: input.extraction.logicalRunKey, method: input.extraction.method, extractorType: input.extraction.extractorType, extractorId: input.extraction.extractorId, extractorVersion: input.extraction.extractorVersion, schemaVersion: input.extraction.schemaVersion, providerModelId: input.extraction.providerModelId, executedAt: input.extraction.executedAt.toISOString() })}`);
+  const identityAssertionId = uuid(`identity:${stable(identitySemantics(identity))}`);
+  const rawClaimId = uuid(`raw:${stable({ documentId, extractionRunId, identityAssertionId, rawText: claim.rawText, rawStructuredValue: claim.rawStructuredValue, claimType: claim.claimType, sourceLocation: claim.sourceLocation ?? `external-claim:${claim.externalClaimKey}`, authority: trusted.authority, authorityRationale: trusted.blockers.length ? "Authority remains unresolved; caller assertions were not trusted." : claim.authorityRationale, limitations: rawLimitations })}`);
+  const normalizedClaimId = uuid(`normalized:${stable({ rawClaimId, claimKey: claim.normalization.claimKey, value: claim.normalization.value, unit: claim.normalization.unit, originalValue: claim.normalization.originalValue, originalUnit: claim.normalization.originalUnit, method: claim.normalization.method, version: claim.normalization.version, vocabularyKnown: claim.normalization.vocabularyKnown, evidenceClass: persistedEvidenceClass, limitations: claimLimitations })}`);
+  const dependencyAssessmentId = uuid(`dependency:${stable({ rawClaimId, type: dependency.type, upstreamClaimId: dependency.upstreamClaimId, rationale: dependency.rationale, version: "1.0" })}`);
+  const constructName = claim.construct?.proposedConstruct ?? `not_applicable:${claim.normalization.claimKey}`;
+  const constructRationale = claim.construct?.rationale ?? "No behavioral construct relationship proposed.";
+  const constructRelationshipId = uuid(`construct:${stable({ normalizedClaimId, constructName, method: claim.construct?.method ?? "keyword_candidate", confidence: claim.construct?.confidence ?? "unmapped", version: claim.construct?.version ?? CONSTRUCT_MAPPING_VERSION, rationale: constructRationale, role: claim.claimType === "marketing_claim" ? "not_applicable" : "candidate_only" })}`);
+  const sourceGovernanceFingerprint = hash(stable({ stableKey: trusted.source.stableKey, sourceType: trusted.source.sourceType, publisherIdentity: trusted.source.publisherIdentity, sourceVersion: trusted.source.sourceVersion, authority: trusted.authority }));
+  const qualificationDecisionId = uuid(`qualification:${stable({ normalizedClaimId, identityAssertionId, dependencyAssessmentId, constructRelationshipId, sourceGovernanceFingerprint, contractVersion: "1.0" })}`);
+  const idempotencyKey = `ingestion:${qualificationDecisionId}`;
+  const semanticFingerprint = hash(stable({ version: EXTERNAL_CLAIM_SEMANTIC_FINGERPRINT_VERSION, sourceId, documentId, extractionRunId, identityAssertionId, rawClaimId, normalizedClaimId, dependencyAssessmentId, constructRelationshipId, qualificationDecisionId }));
   const unknownVocabulary = !claim.normalization.vocabularyKnown;
   const marketing = claim.claimType === "marketing_claim";
   const rawReview = ai ? "review_pending" as const : "review_not_required" as const;
@@ -168,19 +180,20 @@ function buildPersistenceUnit(input: ExternalClaimIngestionInput, claim: Externa
   const graph: EquipmentClaimProvenanceGraph = {
     version: "1.0",
     sources: [{ id: sourceId, displayName: trusted.source.displayName, sourceType: trusted.source.sourceType, publisherIdentity: trusted.source.publisherIdentity, state: "active", version: trusted.source.sourceVersion }],
-    documents: [{ id: documentId, sourceId, documentType: input.document.documentType, sourceReference: input.document.sourceReference, title: input.document.title, publishedAt: input.document.publishedAt?.toISOString(), retrievedAt: input.document.capturedAt.toISOString(), modelYear: input.document.modelYear, revision: revision(input.document.revisionLabel, contentFingerprint), contentFingerprint, availability: input.document.availability }],
+    documents: [{ id: documentId, sourceId, documentType: input.document.documentType, sourceReference: input.document.sourceReference, title: input.document.title, publishedAt: input.document.publishedAt?.toISOString(), retrievedAt: input.document.capturedAt.toISOString(), modelYear: input.document.modelYear, revision: documentRevision, contentFingerprint, availability: input.document.availability }],
     extractionRuns: [{ id: extractionRunId, method: input.extraction.method, extractorType: input.extraction.extractorType, extractorId: extractionIdentity(input.extraction), extractorVersion: input.extraction.extractorVersion, executedAt: input.extraction.executedAt.toISOString(), schemaVersion: input.extraction.schemaVersion, reviewState: rawReview }],
     identities: [{ ...identity, id: identityAssertionId }],
-    rawClaims: [{ id: rawClaimId, sourceId, documentId, sourceLocation: claim.sourceLocation ?? `external-claim:${claim.externalClaimKey}`, rawText: claim.rawText, rawStructuredValue: claim.rawStructuredValue, claimType: claim.claimType, identityAssertionId, extractionRunId, verificationState: verification, reviewState: rawReview, independenceGroupId: dependency.independenceGroupId ?? `document:${documentId}`, authority: trusted.authority, authorityRationale: trusted.blockers.length ? "Authority remains unresolved; caller assertions were not trusted." : claim.authorityRationale, limitations: [...(claim.limitations ?? []), ...trusted.blockers] }],
-    normalizedClaims: [{ id: normalizedClaimId, rawClaimId, claimKey: claim.normalization.claimKey, normalizedValue: claim.normalization.value, normalizedUnit: claim.normalization.unit, originalValue: claim.normalization.originalValue, originalUnit: claim.normalization.originalUnit, normalizationMethod: claim.normalization.method, normalizationVersion: claim.normalization.version, evidenceClass: governedEvidenceClass(claim), verificationState: verification, reviewState: rawReview, identityAssertionId, limitations: [...(claim.limitations ?? []), ...(unknownVocabulary ? ["Unknown normalization vocabulary requires review."] : [])] }],
+    rawClaims: [{ id: rawClaimId, sourceId, documentId, sourceLocation: claim.sourceLocation ?? `external-claim:${claim.externalClaimKey}`, rawText: claim.rawText, rawStructuredValue: claim.rawStructuredValue, claimType: claim.claimType, identityAssertionId, extractionRunId, verificationState: verification, reviewState: rawReview, independenceGroupId: dependency.independenceGroupId ?? `document:${documentId}`, authority: trusted.authority, authorityRationale: trusted.blockers.length ? "Authority remains unresolved; caller assertions were not trusted." : claim.authorityRationale, limitations: rawLimitations }],
+    normalizedClaims: [{ id: normalizedClaimId, rawClaimId, claimKey: claim.normalization.claimKey, normalizedValue: claim.normalization.value, normalizedUnit: claim.normalization.unit, originalValue: claim.normalization.originalValue, originalUnit: claim.normalization.originalUnit, normalizationMethod: claim.normalization.method, normalizationVersion: claim.normalization.version, evidenceClass: governedEvidenceClass(claim), verificationState: verification, reviewState: rawReview, identityAssertionId, limitations: [...claimLimitations, unknownVocabulary ? "ingestion:vocabulary_unknown" : "ingestion:vocabulary_known"] }],
     dependencies: [{ id: dependencyAssessmentId, claimId: rawClaimId, upstreamClaimId: dependency.upstreamClaimId, dependencyType: dependency.type, dependencyRationale: dependency.rationale, reviewedState: "review_pending" }],
-    constructRelationships: [{ id: constructRelationshipId, normalizedClaimId, construct: constructName, role: constructRole, mappingMethod: claim.construct?.method ?? "keyword_candidate", mappingVersion: claim.construct?.version ?? CONSTRUCT_MAPPING_VERSION, reviewState: "review_pending", rationale: claim.construct?.rationale ?? "No behavioral construct relationship proposed.", limitations: ["Proposal only; no construct value or authority is created."], constructValueCreated: false }],
+    constructRelationships: [{ id: constructRelationshipId, normalizedClaimId, construct: constructName, role: constructRole, mappingMethod: claim.construct?.method ?? "keyword_candidate", mappingVersion: claim.construct?.version ?? CONSTRUCT_MAPPING_VERSION, reviewState: "review_pending", rationale: constructRationale, limitations: ["Proposal only; no construct value or authority is created."], constructValueCreated: false }],
     modeledLineages: []
   };
   const qualification = qualifyEquipmentClaim({ graph, normalizedClaimId, targetIdentity: identity });
   const governedQualification: EquipmentClaimQualificationAssessment = trusted.blockers.length || (evidenceClassUnclassified && claim.claimType !== "marketing_claim") ? { ...qualification, state: "review_required", proposedEvidenceClass: undefined, proposedEvidenceInput: undefined } : qualification;
   const quarantineReasons = [...new Set([...quarantine(input, claim, identity, dependency, governedQualification), ...trusted.blockers, ...(evidenceClassUnclassified ? ["evidence_class_unclassified"] : [])])].sort();
-  const reviewReady = projection({ ...input, source: trusted.source }, claim, normalizedClaimId, identity, dependency, governedQualification, quarantineReasons);
+  const projected = projection({ ...input, source: trusted.source }, claim, normalizedClaimId, identity, dependency, governedQualification, quarantineReasons);
+  const reviewReady = { ...projected, documentId, extraction: { ...projected.extraction, runId: extractionRunId } };
   return { idempotencyKey, semanticFingerprint, persistedEvidenceClass, contentFingerprint, sourceId, documentId, extractionRunId, identityAssertionId, rawClaimId, normalizedClaimId, dependencyAssessmentId, constructRelationshipId, qualificationDecisionId, input: { ...input, source: trusted.source }, claim, graph, qualification: governedQualification, reviewReady, dependency, identity } as const;
 }
 
@@ -193,6 +206,7 @@ function rejectCallerReviewShortcuts(claim: ExternalClaimProposal) {
 
 function validateInput(input: ExternalClaimIngestionInput) {
   if (!input.source.stableKey.trim() || !input.document.sourceReference.trim() || !input.document.boundedContent.trim()) throw new ExternalClaimIngestionError("SOURCE_DOCUMENT_INCOMPLETE", "Stable source identity, external reference, and bounded captured content are required.");
+  if (!input.extraction.logicalRunKey.trim() || Number.isNaN(input.extraction.executedAt.getTime())) throw new ExternalClaimIngestionError("EXTRACTION_IDENTITY_INCOMPLETE", "A stable logical extraction run key and valid execution timestamp are required.");
   if (input.targetIdentity.equipmentId === CONTAMINATED_ATLAS_EQUIPMENT_ID || input.targetIdentity.equipmentVariantId === CONTAMINATED_ATLAS_VARIANT_ID) throw new ExternalClaimIngestionError("CONTAMINATED_ATLAS_IDENTITY_BLOCKED", "Ticket #076 may not attach records to the contaminated Atlas USA identity.");
   if (input.extraction.extractorType === "ai_model" && !input.extraction.providerModelId?.trim()) throw new ExternalClaimIngestionError("AI_PROVENANCE_INCOMPLETE", "AI-assisted extraction requires provider/model provenance.");
 }
@@ -232,11 +246,14 @@ function quarantine(input: ExternalClaimIngestionInput, claim: ExternalClaimProp
 
 function projection(input: ExternalClaimIngestionInput, claim: ExternalClaimProposal, normalizedClaimId: string, identity: EquipmentClaimIdentityAssertion, dependency: ReturnType<typeof governedDependency>, qualification: EquipmentClaimQualificationAssessment, quarantineReasons: readonly string[]): ExternalClaimReviewReadyCase {
   const nextDecision = quarantineReasons.some((item) => item.startsWith("identity_")) ? "human_identity_review" : quarantineReasons.includes("unknown_normalization_vocabulary") ? "human_normalization_review" : quarantineReasons.some((item) => item.includes("dependency") || item.includes("syndication")) ? "human_dependency_review" : quarantineReasons.includes("construct_mapping_uncertain") ? "human_construct_review" : qualification.state === "qualified" && claim.claimType !== "marketing_claim" ? "none_required_for_catalog_fact" : "human_qualification_review";
-  return { normalizedClaimId, equipmentId: identity.equipmentId, equipmentVariantId: identity.equipmentVariantId, sourceName: input.source.displayName, documentReference: input.document.sourceReference, rawSourceWording: claim.rawText, normalizedProposal: { claimKey: claim.normalization.claimKey, value: claim.normalization.value, unit: claim.normalization.unit }, extraction: { method: input.extraction.method, extractorId: input.extraction.extractorId, extractorVersion: input.extraction.extractorVersion, providerModelId: input.extraction.providerModelId }, identityCertainty: identity.certainty, dependencyState: dependency.type, suspectedSyndication: dependency.suspected, proposedConstruct: claim.construct?.proposedConstruct, mappingConfidence: claim.construct?.confidence, qualificationState: qualification.state, historicalQualificationState: qualification.state, current: true, unresolvedConflictIds: [], reasons: qualification.reasons, blockers: qualification.blockers, quarantineReasons, nextDecision, authority: { humanApproved: false, independenceEstablished: false, supportingRoleCreated: false, canonicalValueCreated: false, numericValueCreated: false, synthesisGranted: false, recommendationGranted: false } };
+  return { normalizedClaimId, equipmentId: identity.equipmentId, equipmentVariantId: identity.equipmentVariantId, sourceName: input.source.displayName, sourceStableKey: input.source.stableKey, sourceType: input.source.sourceType, publisherIdentity: input.source.publisherIdentity, documentId: "", documentReference: input.document.sourceReference, documentRevision: revision(input.document.revisionLabel, hash(input.document.boundedContent)), rawSourceWording: claim.rawText, sourceLocation: claim.sourceLocation, normalizedProposal: { claimKey: claim.normalization.claimKey, value: claim.normalization.value, unit: claim.normalization.unit, method: claim.normalization.method, version: claim.normalization.version, vocabularyKnown: claim.normalization.vocabularyKnown, evidenceClass: requiresUnclassifiedEvidenceProposal(claim) ? "unclassified" : claim.normalization.evidenceClass }, extraction: { runId: "", logicalRunKey: input.extraction.logicalRunKey, method: input.extraction.method, extractorId: input.extraction.extractorId, extractorVersion: input.extraction.extractorVersion, providerModelId: input.extraction.providerModelId, executedAt: input.extraction.executedAt }, identityCertainty: identity.certainty, dependencyState: dependency.type, suspectedSyndication: dependency.suspected, proposedConstruct: claim.construct?.proposedConstruct, mappingConfidence: claim.construct?.confidence, mappingVersion: claim.construct?.version, qualificationState: qualification.state, historicalQualificationState: qualification.state, current: true, unresolvedConflictIds: [], reasons: qualification.reasons, blockers: qualification.blockers, quarantineReasons, nextDecision, authority: { humanApproved: false, independenceEstablished: false, supportingRoleCreated: false, canonicalValueCreated: false, numericValueCreated: false, synthesisGranted: false, recommendationGranted: false } };
 }
 
-function extractionIdentity(extraction: ExternalClaimIngestionInput["extraction"]) { return extraction.providerModelId ? `${extraction.extractorId}:${extraction.providerModelId}` : extraction.extractorId; }
+function extractionIdentity(extraction: ExternalClaimIngestionInput["extraction"]) { return stable({ logicalRunKey: extraction.logicalRunKey, extractorId: extraction.extractorId, providerModelId: extraction.providerModelId }); }
 function revision(label: string | undefined, fingerprint: string) { return `${label ?? "captured"}-${fingerprint.slice(0, 16)}`; }
-function stable(value: unknown): string { if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`; if (value && typeof value === "object") return `{${Object.entries(value).filter(([, item]) => item !== undefined).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => `${JSON.stringify(key)}:${stable(item)}`).join(",")}}`; return JSON.stringify(value); }
+export function identitySemantics(identity: EquipmentClaimIdentityAssertion) { return { certainty: identity.certainty, manufacturer: identity.manufacturer, model: identity.model, modelYear: identity.modelYear, certification: identity.certification, constructionRevision: identity.constructionRevision, lengthInches: identity.lengthInches, weightOunces: identity.weightOunces, drop: identity.drop, sku: identity.sku, manufacturerProductId: identity.manufacturerProductId, upc: identity.upc, equipmentId: identity.equipmentId, equipmentVariantId: identity.equipmentVariantId, limitations: [...new Set(identity.limitations)].sort() }; }
+export function canonicalizeExternalClaimValue(value: unknown): string { if (value instanceof Date) return JSON.stringify(value.toISOString()); if (Array.isArray(value)) return `[${value.map(canonicalizeExternalClaimValue).join(",")}]`; if (value && typeof value === "object") return `{${Object.entries(value).filter(([, item]) => item !== undefined).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => `${JSON.stringify(key)}:${canonicalizeExternalClaimValue(item)}`).join(",")}}`; return JSON.stringify(value); }
+const stable = canonicalizeExternalClaimValue;
 function hash(value: string) { return createHash("sha256").update(value).digest("hex"); }
-function uuid(seed: string) { const hex = hash(seed); return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`; }
+export function externalClaimUuid(seed: string) { const hex = hash(seed); return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`; }
+const uuid = externalClaimUuid;

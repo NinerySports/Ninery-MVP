@@ -62,6 +62,17 @@ test("changed content creates a document successor identity without rewriting ol
   assert.notEqual(changed.documentId, first.documentId); assert.notEqual(changed.rawClaimId, first.rawClaimId); assert.equal(repository.records.size, 2);
 });
 
+test("capture time is event metadata while publisher revision is document identity", async () => {
+  const repository = new MemoryRepository(); const service = new GovernedExternalClaimIngestionService(repository);
+  const firstInput = base();
+  const first = (await service.ingest(firstInput)).succeeded[0]!;
+  const recaptured = (await service.ingest({ ...firstInput, document: { ...firstInput.document, capturedAt: new Date("2026-09-17") } })).succeeded[0]!;
+  const revised = (await service.ingest({ ...firstInput, document: { ...firstInput.document, revisionLabel: "publisher-revision-2" } })).succeeded[0]!;
+  assert.equal(recaptured.documentId, first.documentId);
+  assert.equal(recaptured.idempotencyKey, first.idempotencyKey);
+  assert.notEqual(revised.documentId, first.documentId);
+});
+
 test("removed or unavailable source state creates an auditable document-state revision", async () => {
   const repository = new MemoryRepository(); const service = new GovernedExternalClaimIngestionService(repository);
   const first = (await service.ingest(base())).succeeded[0]!;
@@ -74,6 +85,25 @@ test("changed extraction implementation preserves document but creates new extra
   const first = (await service.ingest(base())).succeeded[0]!;
   const changed = (await service.ingest(base({ extraction: { ...base().extraction, extractorVersion: "2.0" } }))).succeeded[0]!;
   assert.equal(changed.documentId, first.documentId); assert.notEqual(changed.extractionRunId, first.extractionRunId); assert.notEqual(changed.rawClaimId, first.rawClaimId);
+});
+
+test("same-version intentional extraction is historical while retry of one logical run is idempotent", async () => {
+  const repository = new MemoryRepository(); const service = new GovernedExternalClaimIngestionService(repository);
+  const input = base();
+  const first = (await service.ingest(input)).succeeded[0]!;
+  const retry = (await service.ingest(input)).succeeded[0]!;
+  const laterInput = { ...input, extraction: { ...input.extraction, logicalRunKey: "catalog-parser-run-2", executedAt: new Date("2026-09-17") } };
+  const later = (await service.ingest(laterInput)).succeeded[0]!;
+  assert.equal(retry.extractionRunId, first.extractionRunId);
+  assert.equal(retry.idempotencyKey, first.idempotencyKey);
+  assert.notEqual(later.extractionRunId, first.extractionRunId);
+  assert.equal(later.reviewReady.extraction.extractorVersion, first.reviewReady.extraction.extractorVersion);
+});
+
+test("extraction identity requires a logical run key and valid execution time", async () => {
+  const input = base();
+  await assert.rejects(() => new GovernedExternalClaimIngestionService(new MemoryRepository()).ingest({ ...input, extraction: { ...input.extraction, logicalRunKey: "" } }), (error: unknown) => error instanceof ExternalClaimIngestionError && error.code === "EXTRACTION_IDENTITY_INCOMPLETE");
+  await assert.rejects(() => new GovernedExternalClaimIngestionService(new MemoryRepository()).ingest({ ...input, extraction: { ...input.extraction, executedAt: new Date("invalid") } }), (error: unknown) => error instanceof ExternalClaimIngestionError && error.code === "EXTRACTION_IDENTITY_INCOMPLETE");
 });
 
 test("changed normalization version preserves raw claim and creates a new interpretation", async () => {
@@ -112,7 +142,7 @@ test("unknown dependency remains unknown and suspected syndication is explicit",
 });
 
 test("AI cannot establish independence, verification, or approval and retains model provenance", async () => {
-  const input = base({ extraction: { method: "ai_assisted", extractorType: "ai_model", extractorId: "extractor", extractorVersion: "1", schemaVersion: "1", providerModelId: "provider/model", executedAt: new Date("2026-09-16") } });
+  const input = base({ extraction: { logicalRunKey: "ai-run-1", method: "ai_assisted", extractorType: "ai_model", extractorId: "extractor", extractorVersion: "1", schemaVersion: "1", providerModelId: "provider/model", executedAt: new Date("2026-09-16") } });
   const result = await new GovernedExternalClaimIngestionService(new MemoryRepository()).ingest({ ...input, claims: [{ ...input.claims[0]!, dependency: { type: "independent_observation", rationale: "AI guessed independence." } }] });
   const record = result.succeeded[0]!;
   assert.equal(record.reviewReady.dependencyState, "unknown_dependency"); assert.equal(record.reviewReady.authority.humanApproved, false); assert.equal(record.reviewReady.authority.independenceEstablished, false);
@@ -145,6 +175,9 @@ test("semantic identifiers change for normalized value, unit, claim type, and id
   const reordered = { ...claim, rawStructuredValue: { b: 2, a: 1 } };
   const reorderedAgain = { ...claim, rawStructuredValue: { a: 1, b: 2 } };
   assert.equal((await service.ingest({ ...input, claims: [reordered] })).succeeded[0]!.idempotencyKey, (await service.ingest({ ...input, claims: [reorderedAgain] })).succeeded[0]!.idempotencyKey);
+  const ordered = { ...claim, rawStructuredValue: { values: ["first", "second"] } };
+  const reversed = { ...claim, rawStructuredValue: { values: ["second", "first"] } };
+  assert.notEqual((await service.ingest({ ...input, claims: [ordered] })).succeeded[0]!.idempotencyKey, (await service.ingest({ ...input, claims: [reversed] })).succeeded[0]!.idempotencyKey);
 });
 
 test("unknown vocabulary and low-confidence construct mapping are review-ready, not guessed", async () => {
@@ -169,7 +202,7 @@ test("untrusted source authority and unresolved catalog identity cannot qualify"
 });
 
 test("qualification review_required and not_eligible remain distinct from approval", async () => {
-  const ai = await new GovernedExternalClaimIngestionService(new MemoryRepository()).ingest(base({ extraction: { method: "ai_assisted", extractorType: "ai_model", extractorId: "x", extractorVersion: "1", schemaVersion: "1", providerModelId: "p/m", executedAt: new Date("2026-09-16") } }));
+  const ai = await new GovernedExternalClaimIngestionService(new MemoryRepository()).ingest(base({ extraction: { logicalRunKey: "ai-run-2", method: "ai_assisted", extractorType: "ai_model", extractorId: "x", extractorVersion: "1", schemaVersion: "1", providerModelId: "p/m", executedAt: new Date("2026-09-16") } }));
   assert.equal(ai.succeeded[0]!.qualification.state, "review_required");
   const input = base(); const marketing = await new GovernedExternalClaimIngestionService(new MemoryRepository()).ingest({ ...input, claims: [{ ...input.claims[0]!, claimType: "marketing_claim" }] });
   assert.equal(marketing.succeeded[0]!.qualification.state, "not_eligible"); assert.equal(marketing.succeeded[0]!.reviewReady.authority.humanApproved, false);
@@ -177,7 +210,7 @@ test("qualification review_required and not_eligible remain distinct from approv
 
 test("one failed claim is rolled back and isolated while another succeeds; retry is idempotent", async () => {
   const repository = new MemoryRepository(); repository.failKeys.add("fail"); const input = base();
-  const batch = { ...input, claims: [{ ...input.claims[0]!, externalClaimKey: "ok" }, { ...input.claims[0]!, externalClaimKey: "fail" }] };
+  const batch = { ...input, claims: [{ ...input.claims[0]!, externalClaimKey: "ok" }, { ...input.claims[0]!, externalClaimKey: "fail", normalization: { ...input.claims[0]!.normalization, value: 31 } }] };
   const first = await new GovernedExternalClaimIngestionService(repository).ingest(batch);
   assert.equal(first.succeeded.length, 1); assert.equal(first.failed.length, 1); assert.equal(repository.records.size, 1);
   repository.failKeys.clear(); const retry = await new GovernedExternalClaimIngestionService(repository).ingest(batch);
@@ -215,7 +248,7 @@ function base(overrides: Partial<ExternalClaimIngestionInput> = {}): ExternalCla
   return {
     source: { stableKey: "louisville-slugger", displayName: "Louisville Slugger", sourceType: "manufacturer_primary", publisherIdentity: "Louisville Slugger", sourceVersion: "1.0" },
     document: { sourceReference: "https://www.slugger.com/en-us/product/atlas-usssa-10-2026-wbl4121", documentType: "product_page", title: "2026 Atlas USSSA -10", capturedAt: new Date("2026-09-10"), availability: "available", boundedContent: "Captured manufacturer specification: 30-inch size, USSSA, drop ten." },
-    extraction: { method: "deterministic_parser", extractorType: "software", extractorId: "catalog-parser", extractorVersion: "1.0", schemaVersion: "1.0", executedAt: new Date("2026-09-16") },
+    extraction: { logicalRunKey: "catalog-parser-run-1", method: "deterministic_parser", extractorType: "software", extractorId: "catalog-parser", extractorVersion: "1.0", schemaVersion: "1.0", executedAt: new Date("2026-09-16") },
     targetIdentity,
     claims: [{ externalClaimKey: "length-30", sourceLocation: "specifications", rawText: "30-inch size", claimType: "factual_specification", authority: "authoritative", authorityRationale: "Manufacturer product specification.", identity: targetIdentity, normalization: { claimKey: "nominal_length", value: 30, unit: "in", originalValue: "30-inch", method: "unit_conversion", version: "1.0", vocabularyKnown: true, evidenceClass: "verified_catalog_fact" }, dependency: { type: "original", rationale: "Primary manufacturer source." }, limitations: ["Captured bounded claim text, not a full copyrighted document."] }],
     ...overrides

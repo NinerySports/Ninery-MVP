@@ -38,7 +38,7 @@ function captured(key: string, displayName: string, sourceType: ExternalClaimIng
   return {
     source: { stableKey: `atlas-usssa:${key}`, displayName, sourceType, publisherIdentity: displayName, sourceVersion: "captured-2026-09-10" },
     document: { sourceReference: reference, documentType: sourceType === "retailer" ? "retailer_page" : sourceType === "manufacturer_primary" ? "product_page" : "review_article", title, capturedAt: ATLAS_USSSA_CAPTURE_DATE, modelYear: 2026, availability: "available", boundedContent },
-    extraction: { method: "ai_assisted", extractorType: "ai_model", extractorId: "ninery-claim-extractor", extractorVersion: "1.0", schemaVersion: "1.0", providerModelId: "captured-run-model-unspecified", executedAt: new Date("2026-09-16T00:00:00.000Z") },
+    extraction: { logicalRunKey: `atlas-usssa:${key}:capture-2026-09-16`, method: "ai_assisted", extractorType: "ai_model", extractorId: "ninery-claim-extractor", extractorVersion: "1.0", schemaVersion: "1.0", providerModelId: "captured-run-model-unspecified", executedAt: new Date("2026-09-16T00:00:00.000Z") },
     targetIdentity: target,
     claims: [claim]
   };
