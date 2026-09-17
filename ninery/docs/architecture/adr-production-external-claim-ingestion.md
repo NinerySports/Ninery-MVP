@@ -60,3 +60,26 @@ Every projection explicitly reports false for human approval, established indepe
 ## Atlas Pilot
 
 The pilot adapter contains five controlled, bounded real-source captures: Louisville Slugger, Direct Sports, Academy, BatDigest, and BatReviews. These are inputs to the production service, not imports of the Ticket #071 in-memory graph. Publisher references and capture dates are retained; uncertain editorial vocabulary and dependency remain quarantined.
+# Ticket #076 remediation contracts
+
+## Trust boundary
+
+Ingestion fields are discovery proposals. The production Prisma repository resolves source classification from an existing ExternalEvidenceSource and equipment applicability from the current Equipment/EquipmentVariant catalog. An unknown source is registered only as an unresolved derived-source proposal, receives unknown authority, and remains review-required. Caller-provided authority, certainty, UUIDs, reviewer names, booleans, and independence groups cannot establish governed authority.
+
+Dependency assessments created by ingestion are always system-authored, review_pending proposals. Ticket #076 never creates an accepted human review. A future accepted assessment must reference a real governed review record satisfying Ticket #075 provenance.
+
+Editorial, comparative, subjective, and marketing material is persisted with the literal proposal marker unclassified. This marker is not a seventh Equipment DNA evidence class. It prevents the material from entering any of the six governed evidence-class paths until a legitimate later review classifies it.
+
+## Semantic idempotency
+
+Identifiers use recursively key-sorted canonical JSON. Semantically unordered limitation arrays are de-duplicated and sorted; structured values retain array order. Stage fingerprints bind source/document revision, extraction provenance, raw content and claim semantics, resolved identity, normalized value/unit/method/class/vocabulary, dependency proposal, construct proposal, and qualification contract inputs. Changed semantics create a successor proposal rather than replaying stale state.
+
+Expected PostgreSQL unique and serialization races (P2002, P2034) receive at most three attempts. Other failures are not retried.
+
+## Current state and history
+
+Qualification rows remain immutable historical decisions. Every durable review projection additionally evaluates unresolved conflict membership. If any current conflict is unresolved, every member is operationally review-required, including a claim that was historically qualified before the conflict opened.
+
+Multiple extraction runs over the same document remain one dependent source/document lineage. The run with the latest executedAt value, then deterministic extraction-run ID, is operationally current. Older runs remain replayable and auditable but are marked non-current; re-extraction never creates independent corroboration.
+
+The clean Atlas USSSA inputs are controlled, bounded real-source capture fixtures. They are not live acquisition, independent proof of capture, or evidence authority. Production services perform all ingestion, and the contaminated Atlas USA equipment and variant IDs remain hard blocked.

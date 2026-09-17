@@ -14,11 +14,13 @@ integration("production ingestion repository is atomic and idempotent on isolate
   const equipment = await db.equipment.create({ data: { manufacturer: "Integration", model: randomUUID(), modelYear: 2026, category: "bat", certification: "USSSA" } });
   const variant = await db.equipmentVariant.create({ data: { equipmentId: equipment.id, lengthInches: 30, weightOunces: 20, dropWeight: -10, sku: `INT-${randomUUID()}` } });
   const input = fixture(equipment.id, variant.id);
+  await db.externalEvidenceSource.create({ data: { stableKey: input.source.stableKey, displayName: input.source.displayName, sourceType: input.source.sourceType, publisherIdentity: input.source.publisherIdentity, sourceVersion: input.source.sourceVersion } });
   const service = new GovernedExternalClaimIngestionService(new PrismaExternalClaimIngestionRepository(db));
 
   const first = await service.ingest(input);
   assert.equal(first.failed.length, 0); assert.equal(first.succeeded.length, 1);
   const replay = await service.ingest(input);
+  assert.deepEqual(replay, first, "exact replay returns the complete durable semantic projection");
   assert.equal(replay.succeeded[0]!.qualificationDecisionId, first.succeeded[0]!.qualificationDecisionId);
   assert.equal(replay.succeeded[0]!.normalizedClaimId, first.succeeded[0]!.normalizedClaimId);
   assert.equal(await db.externalEvidenceQualificationDecision.count({ where: { idempotencyKey: first.succeeded[0]!.idempotencyKey } }), 1);
@@ -32,18 +34,42 @@ integration("production ingestion repository is atomic and idempotent on isolate
   const changedVersion = await service.ingest({ ...input, extraction: { ...input.extraction, extractorVersion: "2.0" } });
   assert.equal(changedVersion.succeeded[0]!.documentId, first.succeeded[0]!.documentId);
   assert.notEqual(changedVersion.succeeded[0]!.extractionRunId, first.succeeded[0]!.extractionRunId);
+  const historicalReplay = await service.ingest(input);
+  assert.equal(historicalReplay.succeeded[0]!.reviewReady.current, false);
+  assert.equal(historicalReplay.succeeded[0]!.reviewReady.supersededByExtractionRunId, changedVersion.succeeded[0]!.extractionRunId);
+  assert.equal(changedVersion.succeeded[0]!.reviewReady.current, true);
+  assert.equal((await db.externalEvidenceClaim.findUnique({ where: { id: first.succeeded[0]!.rawClaimId } }))?.documentId, (await db.externalEvidenceClaim.findUnique({ where: { id: changedVersion.succeeded[0]!.rawClaimId } }))?.documentId);
 
   const conflictInput: ExternalClaimIngestionInput = { ...input, claims: [{ ...input.claims[0]!, externalClaimKey: "conflicting-length", normalization: { ...input.claims[0]!.normalization, value: 31 } }] };
   const conflict = await service.ingest(conflictInput);
   assert.equal(conflict.succeeded[0]!.qualification.state, "review_required");
   assert.ok(conflict.succeeded[0]!.reviewReady.quarantineReasons.includes("current_conflict"));
   assert.equal(await db.externalEvidenceConflictMember.count({ where: { normalizedClaimId: conflict.succeeded[0]!.normalizedClaimId } }), 1);
+  const earlierAfterConflict = await service.ingest(input);
+  assert.equal(earlierAfterConflict.succeeded[0]!.reviewReady.qualificationState, "review_required");
+  assert.equal(earlierAfterConflict.succeeded[0]!.reviewReady.historicalQualificationState, "qualified");
+  assert.ok(earlierAfterConflict.succeeded[0]!.reviewReady.unresolvedConflictIds.length > 0);
 
   const beforeClaims = await db.externalEvidenceClaim.count();
   const failing: ExternalClaimIngestionInput = { ...input, claims: [{ ...input.claims[0]!, externalClaimKey: "bad-upstream", dependency: { type: "shared_upstream", rationale: "Deliberately missing upstream for rollback test.", upstreamClaimId: randomUUID() } }] };
   const failed = await service.ingest(failing);
   assert.equal(failed.failed.length, 1);
   assert.equal(await db.externalEvidenceClaim.count(), beforeClaims, "claim transaction rolls back all lineage rows");
+
+  const concurrentInput = fixture(equipment.id, variant.id);
+  await db.externalEvidenceSource.create({ data: { stableKey: concurrentInput.source.stableKey, displayName: concurrentInput.source.displayName, sourceType: concurrentInput.source.sourceType, publisherIdentity: concurrentInput.source.publisherIdentity, sourceVersion: concurrentInput.source.sourceVersion } });
+  const concurrent = await Promise.all([service.ingest(concurrentInput), service.ingest(concurrentInput)]);
+  assert.equal(concurrent[0]!.failed.length, 0);
+  assert.equal(concurrent[1]!.failed.length, 0);
+  assert.deepEqual(concurrent[0], concurrent[1]);
+
+  const forged = fixture(equipment.id, variant.id);
+  const forgedResult = await service.ingest({ ...forged, claims: [{ ...forged.claims[0]!, dependency: { ...forged.claims[0]!.dependency, humanReviewed: true, reviewerReference: "forged" } as ExternalClaimIngestionInput["claims"][number]["dependency"] }] });
+  assert.equal(forgedResult.failed[0]!.code, "CALLER_REVIEW_PROVENANCE_FORBIDDEN");
+
+  const untrusted = fixture(equipment.id, variant.id);
+  const untrustedResult = await service.ingest(untrusted);
+  assert.equal(untrustedResult.succeeded[0]!.qualification.state, "review_required");
 });
 
 function fixture(equipmentId: string, equipmentVariantId: string): ExternalClaimIngestionInput {

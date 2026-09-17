@@ -23,12 +23,12 @@ export function buildAtlasUsssaProductionCaptureInputs(): readonly ExternalClaim
     }),
     captured("batdigest", "BatDigest", "independent_expert_review", "https://batdigest.com/reviews/2026-louisville-slugger-atlas-review/", "2026 Louisville Slugger Atlas Review", "Editorial testing characterizes the USSSA drop-ten family as light swinging.", {
       externalClaimKey: "batdigest-light-swing", rawText: "The USSSA drop-ten family is characterized as light swinging.", claimType: "subjective_observation", authority: "observational", authorityRationale: "Unstructured editorial observation, not measurement authority.", identity: { ...target, certainty: "equipment_model_match", equipmentVariantId: undefined },
-      normalization: { claimKey: "review_startup_demand", value: "light_swing", method: "controlled_vocabulary", version: "1.0", vocabularyKnown: true, evidenceClass: "verified_catalog_fact" }, dependency: { type: "unknown_dependency", rationale: "Publisher independence has not received a human assessment." },
+      normalization: { claimKey: "review_startup_demand", value: "light_swing", method: "controlled_vocabulary", version: "1.0", vocabularyKnown: true, evidenceClass: "structured_human_evaluation" }, dependency: { type: "unknown_dependency", rationale: "Publisher independence has not received a human assessment." },
       construct: { proposedConstruct: "startup_demand", method: "keyword_candidate", confidence: "medium", version: "1.0", rationale: "Candidate semantic relationship only." }
     }),
     captured("batreviews", "BatReviews", "independent_expert_review", "https://batreviews.com/reviews/2026-louisville-slugger-atlas-usssa/", "2026 Atlas USSSA Bat Review", "Editorial prose characterizes the bat as forgiving.", {
       externalClaimKey: "batreviews-forgiving", rawText: "The review characterizes the bat as forgiving.", claimType: "subjective_observation", authority: "observational", authorityRationale: "Unstructured editorial observation, not structured evaluation.", identity: { ...target, certainty: "equipment_model_match", equipmentVariantId: undefined },
-      normalization: { claimKey: "review_response_degradation", value: "forgiving", method: "manual_interpretation", version: "1.0", vocabularyKnown: false, evidenceClass: "verified_catalog_fact" }, dependency: { type: "unknown_dependency", rationale: "Independence is unresolved." },
+      normalization: { claimKey: "review_response_degradation", value: "forgiving", method: "manual_interpretation", version: "1.0", vocabularyKnown: false, evidenceClass: "structured_human_evaluation" }, dependency: { type: "unknown_dependency", rationale: "Independence is unresolved." },
       construct: { proposedConstruct: "response_degradation", method: "keyword_candidate", confidence: "low", version: "1.0", rationale: "Novel editorial terminology requires construct review." }
     })
   ];

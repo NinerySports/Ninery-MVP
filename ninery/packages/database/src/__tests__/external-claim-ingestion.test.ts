@@ -19,12 +19,21 @@ class MemoryRepository implements ExternalClaimIngestionRepository {
   readonly records = new Map<string, ExternalClaimIngestionRecord>();
   readonly units: ExternalClaimPersistenceUnit[] = [];
   failKeys = new Set<string>();
+  resolutionBlockers: string[] = [];
   transaction<T>(operation: (repository: ExternalClaimIngestionRepository) => Promise<T>): Promise<T> { return operation(this); }
-  async findByIdempotencyKey(key: string) { return this.records.get(key); }
+  isRecognizedConcurrencyError() { return false; }
+  async resolveTrustedContext(input: ExternalClaimIngestionInput, claim: ExternalClaimIngestionInput["claims"][number]) {
+    return { source: input.source, identity: this.resolutionBlockers.length ? { ...claim.identity, certainty: "unresolved" as const, equipmentId: undefined, equipmentVariantId: undefined } : claim.identity, authority: this.resolutionBlockers.length ? "unknown" as const : claim.authority, blockers: this.resolutionBlockers };
+  }
+  async findByIdempotencyKey(key: string, semanticFingerprint: string) {
+    const record = this.records.get(key);
+    if (record && record.semanticFingerprint !== semanticFingerprint) throw new ExternalClaimIngestionError("SEMANTIC_FINGERPRINT_MISMATCH", "Idempotency key collided with different semantic input.");
+    return record;
+  }
   async persist(unit: ExternalClaimPersistenceUnit) {
     if (this.failKeys.has(unit.claim.externalClaimKey)) throw new Error("forced claim failure");
     this.units.push(unit);
-    const record: ExternalClaimIngestionRecord = { idempotencyKey: unit.idempotencyKey, sourceId: unit.sourceId, documentId: unit.documentId, extractionRunId: unit.extractionRunId, identityAssertionId: unit.identityAssertionId, rawClaimId: unit.rawClaimId, normalizedClaimId: unit.normalizedClaimId, dependencyAssessmentId: unit.dependencyAssessmentId, constructRelationshipId: unit.constructRelationshipId, qualificationDecisionId: unit.qualificationDecisionId, qualification: unit.qualification, reviewReady: unit.reviewReady };
+    const record: ExternalClaimIngestionRecord = { idempotencyKey: unit.idempotencyKey, semanticFingerprint: unit.semanticFingerprint, sourceId: unit.sourceId, documentId: unit.documentId, extractionRunId: unit.extractionRunId, identityAssertionId: unit.identityAssertionId, rawClaimId: unit.rawClaimId, normalizedClaimId: unit.normalizedClaimId, dependencyAssessmentId: unit.dependencyAssessmentId, constructRelationshipId: unit.constructRelationshipId, qualificationDecisionId: unit.qualificationDecisionId, qualification: unit.qualification, reviewReady: unit.reviewReady };
     this.records.set(unit.idempotencyKey, record);
     return record;
   }
@@ -104,10 +113,38 @@ test("unknown dependency remains unknown and suspected syndication is explicit",
 
 test("AI cannot establish independence, verification, or approval and retains model provenance", async () => {
   const input = base({ extraction: { method: "ai_assisted", extractorType: "ai_model", extractorId: "extractor", extractorVersion: "1", schemaVersion: "1", providerModelId: "provider/model", executedAt: new Date("2026-09-16") } });
-  const result = await new GovernedExternalClaimIngestionService(new MemoryRepository()).ingest({ ...input, claims: [{ ...input.claims[0]!, dependency: { type: "independent_observation", rationale: "AI guessed independence.", independenceGroupId: "fake" } }] });
+  const result = await new GovernedExternalClaimIngestionService(new MemoryRepository()).ingest({ ...input, claims: [{ ...input.claims[0]!, dependency: { type: "independent_observation", rationale: "AI guessed independence." } }] });
   const record = result.succeeded[0]!;
   assert.equal(record.reviewReady.dependencyState, "unknown_dependency"); assert.equal(record.reviewReady.authority.humanApproved, false); assert.equal(record.reviewReady.authority.independenceEstablished, false);
   assert.equal(record.reviewReady.extraction.providerModelId, "provider/model"); assert.ok(record.reviewReady.quarantineReasons.includes("ai_extraction_requires_review"));
+});
+
+test("caller-controlled human review and reviewer provenance are rejected", async () => {
+  for (const shortcut of [{ humanReviewed: true }, { reviewerReference: "forged-human" }, { reviewerIdentity: "operator" }, { independenceGroupId: "fake-independent" }]) {
+    const input = base();
+    const result = await new GovernedExternalClaimIngestionService(new MemoryRepository()).ingest({
+      ...input,
+      claims: [{ ...input.claims[0]!, dependency: { ...input.claims[0]!.dependency, ...shortcut } as ExternalClaimIngestionInput["claims"][number]["dependency"] }]
+    });
+    assert.equal(result.succeeded.length, 0);
+    assert.equal(result.failed[0]!.code, "CALLER_REVIEW_PROVENANCE_FORBIDDEN");
+  }
+});
+
+test("semantic identifiers change for normalized value, unit, claim type, and identity while canonical JSON replays", async () => {
+  const repository = new MemoryRepository(); const service = new GovernedExternalClaimIngestionService(repository);
+  const original = (await service.ingest(base())).succeeded[0]!;
+  const input = base(); const claim = input.claims[0]!;
+  const variants = [
+    { ...claim, normalization: { ...claim.normalization, value: 31 } },
+    { ...claim, normalization: { ...claim.normalization, unit: "cm" } },
+    { ...claim, claimType: "identity_claim" as const },
+    { ...claim, identity: { ...claim.identity, certainty: "equipment_model_match" as const, equipmentVariantId: undefined } }
+  ];
+  for (const changed of variants) assert.notEqual((await service.ingest({ ...input, claims: [changed] })).succeeded[0]!.idempotencyKey, original.idempotencyKey);
+  const reordered = { ...claim, rawStructuredValue: { b: 2, a: 1 } };
+  const reorderedAgain = { ...claim, rawStructuredValue: { a: 1, b: 2 } };
+  assert.equal((await service.ingest({ ...input, claims: [reordered] })).succeeded[0]!.idempotencyKey, (await service.ingest({ ...input, claims: [reorderedAgain] })).succeeded[0]!.idempotencyKey);
 });
 
 test("unknown vocabulary and low-confidence construct mapping are review-ready, not guessed", async () => {
@@ -120,6 +157,15 @@ test("marketing language cannot become structured human or behavioral authority"
   const input = base(); const claim = input.claims[0]!;
   const result = await new GovernedExternalClaimIngestionService(new MemoryRepository()).ingest({ ...input, claims: [{ ...claim, claimType: "marketing_claim", normalization: { ...claim.normalization, evidenceClass: "structured_human_evaluation" }, construct: { proposedConstruct: "startup_demand", method: "keyword_candidate", confidence: "high", version: "1.0", rationale: "Marketing phrase." } }] });
   assert.equal(result.succeeded[0]!.qualification.state, "not_eligible"); assert.ok(result.succeeded[0]!.reviewReady.quarantineReasons.includes("marketing_not_behavioral_authority"));
+});
+
+test("untrusted source authority and unresolved catalog identity cannot qualify", async () => {
+  const repository = new MemoryRepository();
+  repository.resolutionBlockers = ["source_authority_unresolved", "catalog_identity_unresolved"];
+  const result = await new GovernedExternalClaimIngestionService(repository).ingest(base());
+  assert.equal(result.succeeded[0]!.qualification.state, "review_required");
+  assert.equal(result.succeeded[0]!.reviewReady.identityCertainty, "unresolved");
+  assert.ok(result.succeeded[0]!.reviewReady.quarantineReasons.includes("source_authority_unresolved"));
 });
 
 test("qualification review_required and not_eligible remain distinct from approval", async () => {
