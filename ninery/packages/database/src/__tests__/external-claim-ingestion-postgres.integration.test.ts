@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
-import { Prisma, PrismaClient } from "@prisma/client";
-import { CONTAMINATED_ATLAS_EQUIPMENT_ID, CONTAMINATED_ATLAS_VARIANT_ID, externalClaimUuid, GovernedExternalClaimIngestionService, type ExternalClaimIngestionInput } from "../external-claim-ingestion.js";
+import { PrismaClient } from "@prisma/client";
+import { CONTAMINATED_ATLAS_EQUIPMENT_ID, CONTAMINATED_ATLAS_VARIANT_ID, externalClaimUuid, GovernedExternalClaimIngestionService, qualificationFingerprint, type ExternalClaimIngestionInput } from "../external-claim-ingestion.js";
 import { PrismaExternalClaimIngestionRepository } from "../prisma-external-claim-ingestion-repository.js";
 
 const url = process.env.TEST_DATABASE_URL;
@@ -14,6 +14,7 @@ integration("Ticket #076 production ingestion PostgreSQL boundary", async () => 
   const equipment = await db.equipment.create({ data: { manufacturer: "Integration", model: randomUUID(), modelYear: 2026, category: "bat", certification: "USSSA" } });
   const variant = await db.equipmentVariant.create({ data: { equipmentId: equipment.id, lengthInches: 30, weightOunces: 20, dropWeight: -10, sku: `INT-${randomUUID()}` } });
   const otherVariant = await db.equipmentVariant.create({ data: { equipmentId: equipment.id, lengthInches: 31, weightOunces: 21, dropWeight: -10, sku: `INT-${randomUUID()}` } });
+  const reverseVariant = await db.equipmentVariant.create({ data: { equipmentId: equipment.id, lengthInches: 32, weightOunces: 22, dropWeight: -10, sku: `INT-${randomUUID()}` } });
   const service = new GovernedExternalClaimIngestionService(new PrismaExternalClaimIngestionRepository(db));
 
   // 1-2: exact replay and complete durable projection equality.
@@ -32,11 +33,13 @@ integration("Ticket #076 production ingestion PostgreSQL boundary", async () => 
   assert.equal(crossVariantResult.succeeded[0]!.reviewReady.equipmentVariantId, otherVariant.id);
   assert.notEqual(crossVariantResult.succeeded[0]!.identityAssertionId, first.succeeded[0]!.identityAssertionId);
 
-  // 6: persisted semantic corruption fails closed even when IDs are unchanged.
-  const original = await db.externalEvidenceNormalizedClaim.findUniqueOrThrow({ where: { id: first.succeeded[0]!.normalizedClaimId } });
-  await db.externalEvidenceNormalizedClaim.update({ where: { id: original.id }, data: { normalizedValue: 999 } });
-  assert.equal((await service.ingest(input)).failed[0]!.code, "SEMANTIC_FINGERPRINT_MISMATCH");
-  await db.externalEvidenceNormalizedClaim.update({ where: { id: original.id }, data: { normalizedValue: original.normalizedValue === null ? Prisma.JsonNull : original.normalizedValue } });
+  // 6: the relational trigger prevents mutation before repository verification;
+  // qualification fingerprint behavior is tested without weakening that trigger.
+  await assert.rejects(() => db.externalEvidenceQualificationDecision.update({ where: { id: first.succeeded[0]!.qualificationDecisionId }, data: { state: "not_eligible" } }));
+  const persistedQualification = await db.externalEvidenceQualificationDecision.findUniqueOrThrow({ where: { id: first.succeeded[0]!.qualificationDecisionId } });
+  const validFingerprint = persistedQualification.semanticFingerprint;
+  const alteredFingerprint = qualificationFingerprint({ qualification: { ...first.succeeded[0]!.qualification, state: "not_eligible" }, normalizedClaimId: first.succeeded[0]!.normalizedClaimId, rawClaimId: first.succeeded[0]!.rawClaimId, identityAssertionId: first.succeeded[0]!.identityAssertionId, dependencyAssessmentId: first.succeeded[0]!.dependencyAssessmentId, constructRelationshipId: first.succeeded[0]!.constructRelationshipId, sourceGovernanceRevisionId: first.succeeded[0]!.reviewReady.historicalSourceGovernanceRevisionId, authority: first.succeeded[0]!.qualification.authority! });
+  assert.notEqual(alteredFingerprint, validFingerprint);
 
   // 7-8: fabricated review and untrusted authority cannot pass.
   const forged = fixture(equipment.id, variant.id); await registerSource(forged);
@@ -54,6 +57,16 @@ integration("Ticket #076 production ingestion PostgreSQL boundary", async () => 
   // 10-11: identical concurrency converges and fingerprint collisions fail closed.
   const concurrentInput = fixture(equipment.id, variant.id); await registerSource(concurrentInput);
   const concurrent = await Promise.all([service.ingest(concurrentInput), service.ingest(concurrentInput)]); assert.deepEqual(concurrent[0], concurrent[1]);
+  const incompatibleConcurrent = await Promise.all([
+    service.ingest(withClaim(concurrentInput, { normalization: { ...concurrentInput.claims[0]!.normalization, value: 32 } })),
+    service.ingest(withClaim(concurrentInput, { normalization: { ...concurrentInput.claims[0]!.normalization, value: 33 } }))
+  ]);
+  assert.notEqual(incompatibleConcurrent[0].succeeded[0]!.normalizedClaimId, incompatibleConcurrent[1].succeeded[0]!.normalizedClaimId);
+  const incompatibleCurrent = await Promise.all([
+    service.ingest(withClaim(concurrentInput, { normalization: { ...concurrentInput.claims[0]!.normalization, value: 32 } })),
+    service.ingest(withClaim(concurrentInput, { normalization: { ...concurrentInput.claims[0]!.normalization, value: 33 } }))
+  ]);
+  assert.ok(incompatibleCurrent.every((result) => result.succeeded[0]!.reviewReady.qualificationState === "review_required"));
   const repository = new PrismaExternalClaimIngestionRepository(db);
   const collisionChecks = await Promise.allSettled([repository.findByIdempotencyKey(first.succeeded[0]!.idempotencyKey, "bad-a"), repository.findByIdempotencyKey(first.succeeded[0]!.idempotencyKey, "bad-b")]);
   assert.ok(collisionChecks.every((result) => result.status === "rejected"));
@@ -63,7 +76,8 @@ integration("Ticket #076 production ingestion PostgreSQL boundary", async () => 
   const earlierAfterConflict = await service.ingest(input);
   assert.equal(earlierAfterConflict.succeeded[0]!.reviewReady.historicalQualificationState, "qualified");
   assert.equal(earlierAfterConflict.succeeded[0]!.reviewReady.qualificationState, "review_required");
-  const reverse = fixture(equipment.id, otherVariant.id); await registerSource(reverse);
+  assert.deepEqual(await service.ingest(input), earlierAfterConflict);
+  const reverse = fixture(equipment.id, reverseVariant.id); await registerSource(reverse);
   const reverseBInput = withClaim(reverse, { normalization: { ...reverse.claims[0]!.normalization, value: 31 } });
   await service.ingest(reverseBInput); assert.equal((await service.ingest(reverse)).succeeded[0]!.qualification.state, "review_required");
   assert.equal((await service.ingest(reverseBInput)).succeeded[0]!.reviewReady.qualificationState, "review_required");
@@ -88,6 +102,17 @@ integration("Ticket #076 production ingestion PostgreSQL boundary", async () => 
   const dependencies = await db.externalEvidenceDependencyAssessment.findMany({ where: { claimId: { in: [...multiFirst.succeeded, ...multiV2.succeeded].map((record) => record.rawClaimId) } } });
   assert.ok(dependencies.every((row) => row.independenceGroupId === null && row.reviewedState === "review_pending"));
 
+  // 20a: document revisions use the same precise slot contract and never cross-supersede.
+  const documentV2Input: ExternalClaimIngestionInput = { ...multiInput, document: { ...multiInput.document, revisionLabel: "publisher-v2", boundedContent: "USSSA certified; 2.625 inch barrel." }, extraction: { ...multiInput.extraction, logicalRunKey: `${multiInput.extraction.logicalRunKey}:document-v2`, executedAt: new Date("2026-09-20T00:00:00.000Z") }, claims: [multiInput.claims[0]!, { ...multiInput.claims[1]!, rawText: "2.625 inch barrel", normalization: { ...multiInput.claims[1]!.normalization, value: 2.625 } }] };
+  const documentV2 = await service.ingest(documentV2Input);
+  assert.equal(documentV2.succeeded.length, 2);
+  const documentV1Replay = await service.ingest(multiInput);
+  assert.ok(documentV1Replay.succeeded.every((record) => !record.reviewReady.current && record.reviewReady.supersessionReason === "document_revision"));
+  const v1Claims = await db.externalEvidenceClaim.findMany({ where: { id: { in: multiFirst.succeeded.map((record) => record.rawClaimId) } }, include: { supersededBy: true } });
+  assert.ok(v1Claims.every((claim) => claim.supersededBy.length === 1));
+  assert.equal(new Set(v1Claims.map((claim) => claim.claimSlotKey)).size, 2);
+  assert.deepEqual(await service.ingest(multiInput), documentV1Replay);
+
   // 21-23: unknown-vocabulary, AI, and editorial/unclassified projections replay exactly.
   const unknown = fixture(equipment.id, variant.id); await registerSource(unknown); const unknownInput = withClaim(unknown, { normalization: { ...unknown.claims[0]!.normalization, vocabularyKnown: false } });
   const unknownFirst = await service.ingest(unknownInput); const unknownReplay = await service.ingest(unknownInput); assert.deepEqual(unknownReplay, unknownFirst); assert.ok(unknownReplay.succeeded[0]!.reviewReady.quarantineReasons.includes("unknown_normalization_vocabulary"));
@@ -95,6 +120,8 @@ integration("Ticket #076 production ingestion PostgreSQL boundary", async () => 
   const aiFirst = await service.ingest(aiInput); const aiReplay = await service.ingest(aiInput); assert.deepEqual(aiReplay, aiFirst); assert.ok(aiReplay.succeeded[0]!.reviewReady.quarantineReasons.includes("ai_extraction_requires_review")); assert.ok(!aiReplay.succeeded[0]!.reviewReady.quarantineReasons.includes("processing_requires_review"));
   const editorial = fixture(equipment.id, variant.id); await registerSource(editorial); const editorialInput = withClaim(editorial, { claimType: "subjective_observation", normalization: { ...editorial.claims[0]!.normalization, evidenceClass: "verified_catalog_fact" } });
   const editorialFirst = await service.ingest(editorialInput); const editorialReplay = await service.ingest(editorialInput); assert.deepEqual(editorialReplay, editorialFirst); assert.equal(editorialReplay.succeeded[0]!.reviewReady.normalizedProposal.evidenceClass, "unclassified");
+  const unresolvedDependency = fixture(equipment.id, variant.id); await registerSource(unresolvedDependency); const unresolvedDependencyInput = withClaim(unresolvedDependency, { dependency: { type: "suspected_dependency", rationale: "Possible syndication requires review." } });
+  const unresolvedDependencyFirst = await service.ingest(unresolvedDependencyInput); assert.deepEqual(await service.ingest(unresolvedDependencyInput), unresolvedDependencyFirst);
 
   // 24-25: contaminated identities perform zero writes and no supporting role/canonical output is created.
   const beforeBlocked = await lineageCounts();
@@ -102,11 +129,28 @@ integration("Ticket #076 production ingestion PostgreSQL boundary", async () => 
   assert.deepEqual(await lineageCounts(), beforeBlocked);
   assert.equal(await db.externalSupportingRoleDecision.count({ where: { normalizedClaimId: { in: [first.succeeded[0]!.normalizedClaimId, editorialFirst.succeeded[0]!.normalizedClaimId] } } }), 0);
   assert.equal(await db.equipmentDNAAttributeEvaluation.count({ where: { OR: [{ equipmentId: equipment.id }, { equipmentVariantId: { in: [variant.id, otherVariant.id] } }] } }), 0);
+  const beforeStopBoundary = await downstreamCounts();
+  const stopBoundaryInput = fixture(equipment.id, variant.id); await registerSource(stopBoundaryInput);
+  assert.equal((await service.ingest(stopBoundaryInput)).failed.length, 0);
+  assert.deepEqual(await downstreamCounts(), beforeStopBoundary);
+
+  // 26-27: governance G2 is append-only/current while historical G1 remains linked.
+  const governanceInput = fixture(equipment.id, variant.id); await registerSource(governanceInput);
+  const governanceFirst = (await service.ingest(governanceInput)).succeeded[0]!;
+  const g1 = await db.externalEvidenceSourceGovernanceRevision.findUniqueOrThrow({ where: { id: governanceFirst.reviewReady.historicalSourceGovernanceRevisionId } });
+  const g2 = await db.externalEvidenceSourceGovernanceRevision.create({ data: { sourceId: g1.sourceId, revisionNumber: 2, governanceVersion: "1.0", sourceType: "retailer", publisherIdentity: g1.publisherIdentity, authorityScope: { claimAuthority: "secondary" }, dependencyKnowledge: { state: "claim_level_assessment_required" }, state: "active", reviewerType: "system", reviewerReference: "ticket-076-postgres-governance-fixture", rationale: "Material source classification correction.", effectiveAt: new Date("2026-09-21T00:00:00.000Z"), supersedesRevisionId: g1.id, idempotencyKey: `governance-g2:${g1.id}` } });
+  const governanceReplay = (await service.ingest(governanceInput)).succeeded[0]!;
+  assert.equal(governanceReplay.reviewReady.historicalSourceGovernanceRevisionId, g1.id);
+  assert.equal(governanceReplay.reviewReady.currentSourceGovernanceRevisionId, g2.id);
+  assert.equal(governanceReplay.reviewReady.sourceGovernanceChanged, true);
+  assert.equal(governanceReplay.reviewReady.historicalQualificationState, governanceFirst.reviewReady.historicalQualificationState);
+  assert.equal(governanceReplay.reviewReady.qualificationState, "review_required");
 
   async function registerSource(value: ExternalClaimIngestionInput) {
     await db!.externalEvidenceSource.upsert({ where: { stableKey: value.source.stableKey }, update: {}, create: { id: externalClaimUuid(`source:${value.source.stableKey}`), stableKey: value.source.stableKey, displayName: value.source.displayName, sourceType: value.source.sourceType, publisherIdentity: value.source.publisherIdentity, sourceVersion: value.source.sourceVersion, metadata: { sourceAuthorityResolved: true } } });
   }
-  async function lineageCounts() { return { documents: await db!.externalEvidenceDocument.count(), extractions: await db!.externalEvidenceExtractionRun.count(), identities: await db!.externalEvidenceIdentityAssertion.count(), claims: await db!.externalEvidenceClaim.count(), normalized: await db!.externalEvidenceNormalizedClaim.count(), dependencies: await db!.externalEvidenceDependencyAssessment.count(), constructs: await db!.externalEvidenceConstructRelationship.count(), qualifications: await db!.externalEvidenceQualificationDecision.count() }; }
+  async function lineageCounts() { return { sources: await db!.externalEvidenceSource.count(), governance: await db!.externalEvidenceSourceGovernanceRevision.count(), documents: await db!.externalEvidenceDocument.count(), extractions: await db!.externalEvidenceExtractionRun.count(), identities: await db!.externalEvidenceIdentityAssertion.count(), claims: await db!.externalEvidenceClaim.count(), normalized: await db!.externalEvidenceNormalizedClaim.count(), dependencies: await db!.externalEvidenceDependencyAssessment.count(), constructs: await db!.externalEvidenceConstructRelationship.count(), qualifications: await db!.externalEvidenceQualificationDecision.count(), conflicts: await db!.externalEvidenceConflictCase.count(), conflictMembers: await db!.externalEvidenceConflictMember.count(), reviews: await db!.externalEvidenceReviewDecision.count(), supporting: await db!.externalSupportingRoleDecision.count() }; }
+  async function downstreamCounts() { return { supporting: await db!.externalSupportingRoleDecision.count(), acceptedConstructs: await db!.externalEvidenceConstructRelationship.count({ where: { reviewState: { in: ["reviewed_accepted", "reviewed_with_limitations"] } } }), acceptedDependencyReviews: await db!.externalEvidenceDependencyAssessment.count({ where: { reviewedState: { in: ["reviewed_accepted", "reviewed_with_limitations"] } } }), acceptedReviewDecisions: await db!.externalEvidenceReviewDecision.count({ where: { decision: { in: ["reviewed_accepted", "reviewed_with_limitations"] } } }), canonicalEvaluations: await db!.equipmentDNAAttributeEvaluation.count({ where: { OR: [{ equipmentId: equipment.id }, { equipmentVariantId: { in: [variant.id, otherVariant.id, reverseVariant.id] } }] } }) }; }
 });
 
 function withClaim(input: ExternalClaimIngestionInput, changes: Partial<ExternalClaimIngestionInput["claims"][number]>): ExternalClaimIngestionInput { return { ...input, claims: [{ ...input.claims[0]!, ...changes }] }; }

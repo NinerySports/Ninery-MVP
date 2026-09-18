@@ -5,6 +5,7 @@ import {
   CONTAMINATED_ATLAS_VARIANT_ID,
   ExternalClaimIngestionError,
   GovernedExternalClaimIngestionService,
+  qualificationFingerprint,
   type ExternalClaimIngestionInput,
   type ExternalClaimIngestionRecord,
   type ExternalClaimIngestionRepository,
@@ -23,7 +24,7 @@ class MemoryRepository implements ExternalClaimIngestionRepository {
   transaction<T>(operation: (repository: ExternalClaimIngestionRepository) => Promise<T>): Promise<T> { return operation(this); }
   isRecognizedConcurrencyError() { return false; }
   async resolveTrustedContext(input: ExternalClaimIngestionInput, claim: ExternalClaimIngestionInput["claims"][number]) {
-    return { source: input.source, identity: this.resolutionBlockers.length ? { ...claim.identity, certainty: "unresolved" as const, equipmentId: undefined, equipmentVariantId: undefined } : claim.identity, authority: this.resolutionBlockers.length ? "unknown" as const : claim.authority, blockers: this.resolutionBlockers };
+    return { source: input.source, identity: this.resolutionBlockers.length ? { ...claim.identity, certainty: "unresolved" as const, equipmentId: undefined, equipmentVariantId: undefined } : claim.identity, authority: this.resolutionBlockers.length ? "unknown" as const : claim.authority, governanceRevision: { id: "11111111-1111-5111-a111-111111111111", revisionNumber: 1, version: "1.0", effectiveAt: new Date(0) }, blockers: this.resolutionBlockers };
   }
   async findByIdempotencyKey(key: string, semanticFingerprint: string) {
     const record = this.records.get(key);
@@ -53,6 +54,16 @@ test("exact replay creates no duplicate current-state knowledge", async () => {
   const repository = new MemoryRepository(); const service = new GovernedExternalClaimIngestionService(repository);
   const first = await service.ingest(base()); const second = await service.ingest(base());
   assert.deepEqual(second, first); assert.equal(repository.units.length, 1); assert.equal(repository.records.size, 1);
+});
+
+test("qualification semantic fingerprint covers material persisted output", async () => {
+  const repository = new MemoryRepository();
+  const record = (await new GovernedExternalClaimIngestionService(repository).ingest(base())).succeeded[0]!;
+  const unit = repository.units[0]!;
+  const correct = qualificationFingerprint({ qualification: record.qualification, normalizedClaimId: record.normalizedClaimId, rawClaimId: record.rawClaimId, identityAssertionId: record.identityAssertionId, dependencyAssessmentId: record.dependencyAssessmentId, constructRelationshipId: record.constructRelationshipId, sourceGovernanceRevisionId: record.reviewReady.historicalSourceGovernanceRevisionId, authority: record.qualification.authority! });
+  const altered = qualificationFingerprint({ qualification: { ...record.qualification, state: "not_eligible" }, normalizedClaimId: record.normalizedClaimId, rawClaimId: record.rawClaimId, identityAssertionId: record.identityAssertionId, dependencyAssessmentId: record.dependencyAssessmentId, constructRelationshipId: record.constructRelationshipId, sourceGovernanceRevisionId: record.reviewReady.historicalSourceGovernanceRevisionId, authority: record.qualification.authority! });
+  assert.equal(correct, unit.qualificationSemanticFingerprint);
+  assert.notEqual(altered, correct);
 });
 
 test("changed content creates a document successor identity without rewriting old provenance", async () => {

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
-import { canonicalizeExternalClaimValue, externalClaimUuid, identitySemantics, ExternalClaimIngestionError, type ExternalClaimIngestionInput, type ExternalClaimIngestionRecord, type ExternalClaimIngestionRepository, type ExternalClaimPersistenceUnit, type ExternalClaimProposal, type ExternalClaimTrustedResolution } from "./external-claim-ingestion.js";
+import { canonicalizeExternalClaimValue, externalClaimUuid, identitySemantics, qualificationFingerprint, ExternalClaimIngestionError, type ExternalClaimIngestionInput, type ExternalClaimIngestionRecord, type ExternalClaimIngestionRepository, type ExternalClaimPersistenceUnit, type ExternalClaimProposal, type ExternalClaimTrustedResolution } from "./external-claim-ingestion.js";
 
 type Client = PrismaClient | Prisma.TransactionClient;
 
@@ -18,7 +18,7 @@ export class PrismaExternalClaimIngestionRepository implements ExternalClaimInge
 
   async resolveTrustedContext(input: ExternalClaimIngestionInput, claim: ExternalClaimProposal): Promise<ExternalClaimTrustedResolution> {
     const blockers: string[] = [];
-    const persistedSource = await this.client.externalEvidenceSource.findUnique({ where: { stableKey: input.source.stableKey } });
+    const persistedSource = await this.client.externalEvidenceSource.findUnique({ where: { stableKey: input.source.stableKey }, include: { governanceRevisions: { include: { supersededBy: true } } } });
     const sourceMetadata = persistedSource?.metadata && typeof persistedSource.metadata === "object" && !Array.isArray(persistedSource.metadata) ? persistedSource.metadata : undefined;
     const source = persistedSource ? {
       stableKey: persistedSource.stableKey,
@@ -32,8 +32,13 @@ export class PrismaExternalClaimIngestionRepository implements ExternalClaimInge
       sourceType: "derived_model_output" as const,
       sourceVersion: input.source.sourceVersion
     };
-    if (!persistedSource || sourceMetadata?.sourceAuthorityResolved === false) blockers.push("source_authority_unresolved");
-    if (persistedSource && (persistedSource.sourceType !== input.source.sourceType || persistedSource.publisherIdentity !== (input.source.publisherIdentity ?? null))) blockers.push("source_proposal_conflicts_with_registry");
+    const currentGovernance = persistedSource?.governanceRevisions.filter((revision) => revision.supersededBy.length === 0) ?? [];
+    if (currentGovernance.length > 1) blockers.push("source_governance_ambiguous");
+    const governance = currentGovernance.length === 1 ? currentGovernance[0] : undefined;
+    if (!persistedSource || sourceMetadata?.sourceAuthorityResolved === false || (persistedSource.governanceRevisions.length > 0 && !governance)) blockers.push("source_authority_unresolved");
+    const governedSourceType = governance?.sourceType ?? persistedSource?.sourceType;
+    const governedPublisher = governance?.publisherIdentity ?? persistedSource?.publisherIdentity;
+    if (persistedSource && (governedSourceType !== input.source.sourceType || governedPublisher !== (input.source.publisherIdentity ?? null))) blockers.push("source_proposal_conflicts_with_registry");
 
     const requestedEquipmentId = claim.identity.equipmentId ?? input.targetIdentity.equipmentId;
     const requestedVariantId = claim.identity.equipmentVariantId ?? input.targetIdentity.equipmentVariantId;
@@ -55,12 +60,13 @@ export class PrismaExternalClaimIngestionRepository implements ExternalClaimInge
       sku: exactVariant ? variant!.sku ?? undefined : undefined,
       equipmentId: equipment.id,
       equipmentVariantId: exactVariant ? variant!.id : undefined,
-      limitations: [...claim.identity.limitations, ...blockers]
-    } : { ...claim.identity, certainty: "unresolved" as const, equipmentId: undefined, equipmentVariantId: undefined, limitations: [...claim.identity.limitations, ...blockers] };
-    const authority = persistedSource && !blockers.includes("source_proposal_conflicts_with_registry")
-      ? authorityFor(persistedSource.sourceType, claim.claimType)
+      limitations: [...claim.identity.limitations, ...blockers.filter((blocker) => blocker.startsWith("catalog_"))]
+    } : { ...claim.identity, certainty: "unresolved" as const, equipmentId: undefined, equipmentVariantId: undefined, limitations: [...claim.identity.limitations, ...blockers.filter((blocker) => blocker.startsWith("catalog_"))] };
+    const authority = persistedSource && governanceStateAllowsAuthority(governance?.state) && !blockers.some((blocker) => blocker.startsWith("source_governance_") || blocker === "source_proposal_conflicts_with_registry")
+      ? authorityFor(governedSourceType!, claim.claimType)
       : "unknown" as const;
-    return { source, identity, authority, blockers: [...new Set(blockers)].sort() };
+    const governanceRevision = governance ? { id: governance.id, revisionNumber: governance.revisionNumber, version: governance.governanceVersion, effectiveAt: governance.effectiveAt } : initialGovernanceRevision(source, authority);
+    return { source: { ...source, sourceType: governedSourceType ?? source.sourceType, publisherIdentity: governedPublisher ?? undefined }, identity, authority, governanceRevision, blockers: [...new Set(blockers)].sort() };
   }
 
   async findByIdempotencyKey(idempotencyKey: string, semanticFingerprint: string): Promise<ExternalClaimIngestionRecord | undefined> {
@@ -68,7 +74,8 @@ export class PrismaExternalClaimIngestionRepository implements ExternalClaimInge
       where: { idempotencyKey },
       include: {
         normalizedClaim: { include: { rawClaim: { include: { document: { include: { source: true } }, extractionRun: true, identityAssertion: true, dependencyAssessments: { orderBy: { assessedAt: "desc" }, take: 1 } } } } },
-        constructRelationship: true
+        constructRelationship: true,
+        sourceGovernanceRevision: true
       }
     });
     if (!row) return undefined;
@@ -81,13 +88,13 @@ export class PrismaExternalClaimIngestionRepository implements ExternalClaimInge
     const documentExpected = externalClaimUuid(`document:${canonicalizeExternalClaimValue({ sourceId: raw.document.sourceId, sourceReference: raw.document.sourceReference, contentFingerprint: raw.document.contentFingerprint ?? undefined, documentType: raw.document.documentType, title: raw.document.title, publishedAt: raw.document.publishedAt?.toISOString(), modelYear: raw.document.modelYear ?? undefined, revision: raw.document.revision, availability: raw.document.availability })}`);
     const extractionExpected = externalClaimUuid(`extraction:${canonicalizeExternalClaimValue({ documentId: raw.documentId, logicalRunKey: extractorIdentity.logicalRunKey, method: raw.extractionRun.method, extractorType: raw.extractionRun.extractorType, extractorId: extractorIdentity.extractorId, extractorVersion: raw.extractionRun.extractorVersion, schemaVersion: raw.extractionRun.schemaVersion, providerModelId: extractorIdentity.providerModelId, executedAt: raw.extractionRun.executedAt.toISOString() })}`);
     const identityExpected = externalClaimUuid(`identity:${canonicalizeExternalClaimValue(identitySemantics({ id: raw.identityAssertion.id, certainty: raw.identityAssertion.certainty, manufacturer: raw.identityAssertion.manufacturer ?? undefined, model: raw.identityAssertion.model ?? undefined, modelYear: raw.identityAssertion.modelYear ?? undefined, certification: raw.identityAssertion.certification ?? undefined, constructionRevision: raw.identityAssertion.constructionRevision ?? undefined, lengthInches: raw.identityAssertion.lengthInches === null ? undefined : Number(raw.identityAssertion.lengthInches), weightOunces: raw.identityAssertion.weightOunces === null ? undefined : Number(raw.identityAssertion.weightOunces), drop: raw.identityAssertion.drop ?? undefined, sku: raw.identityAssertion.sku ?? undefined, manufacturerProductId: raw.identityAssertion.manufacturerProductId ?? undefined, upc: raw.identityAssertion.upc ?? undefined, equipmentId: raw.identityAssertion.equipmentId ?? undefined, equipmentVariantId: raw.identityAssertion.equipmentVariantId ?? undefined, limitations: strings(raw.identityAssertion.limitations) }))}`);
-    const rawExpected = externalClaimUuid(`raw:${canonicalizeExternalClaimValue({ documentId: raw.documentId, extractionRunId: raw.extractionRunId, identityAssertionId: raw.identityAssertionId, rawText: raw.rawText ?? undefined, rawStructuredValue: raw.rawStructuredValue ?? undefined, claimType: raw.claimType, sourceLocation: raw.sourceLocation ?? undefined, authority: raw.authority, authorityRationale: raw.authorityRationale, limitations: strings(raw.limitations).sort() })}`);
+    if (!raw.claimSlotKey || !row.sourceGovernanceRevisionId || !row.sourceGovernanceRevision || !row.semanticFingerprint) throw new ExternalClaimIngestionError("PERSISTED_LINEAGE_INCOMPLETE", "Ticket #076 lineage lacks claim-slot, governance-revision, or qualification semantic metadata.");
+    const rawExpected = externalClaimUuid(`raw:${canonicalizeExternalClaimValue({ documentId: raw.documentId, extractionRunId: raw.extractionRunId, identityAssertionId: raw.identityAssertionId, claimSlotKey: raw.claimSlotKey, rawText: raw.rawText ?? undefined, rawStructuredValue: raw.rawStructuredValue ?? undefined, claimType: raw.claimType, sourceLocation: raw.sourceLocation ?? undefined })}`);
     const normalizedLimitationsForIdentity = strings(normalized.limitations).filter((item) => !item.startsWith("ingestion:vocabulary_")).sort();
     const normalizedExpected = externalClaimUuid(`normalized:${canonicalizeExternalClaimValue({ rawClaimId: normalized.rawClaimId, claimKey: normalized.claimKey, value: normalized.normalizedValue, unit: normalized.normalizedUnit ?? undefined, originalValue: normalized.originalValue ?? undefined, originalUnit: normalized.originalUnit ?? undefined, method: normalized.normalizationMethod, version: normalized.normalizationVersion, vocabularyKnown: !strings(normalized.limitations).includes("ingestion:vocabulary_unknown"), evidenceClass: normalized.evidenceClass, limitations: normalizedLimitationsForIdentity })}`);
     const dependencyExpected = externalClaimUuid(`dependency:${canonicalizeExternalClaimValue({ rawClaimId: raw.id, type: dependency.dependencyType, upstreamClaimId: dependency.upstreamClaimId ?? undefined, rationale: dependency.dependencyRationale, version: dependency.assessmentVersion })}`);
     const constructExpected = externalClaimUuid(`construct:${canonicalizeExternalClaimValue({ normalizedClaimId: normalized.id, constructName: row.constructRelationship.proposedConstruct, method: row.constructRelationship.mappingMethod, confidence: row.constructRelationship.mappingConfidence, version: row.constructRelationship.mappingVersion, rationale: row.constructRelationship.rationale, role: row.constructRelationship.role })}`);
-    const sourceGovernanceFingerprint = createHash("sha256").update(canonicalizeExternalClaimValue({ stableKey: raw.document.source.stableKey, sourceType: raw.document.source.sourceType, publisherIdentity: raw.document.source.publisherIdentity ?? undefined, sourceVersion: raw.document.source.sourceVersion, authority: raw.authority })).digest("hex");
-    const qualificationExpected = externalClaimUuid(`qualification:${canonicalizeExternalClaimValue({ normalizedClaimId: normalized.id, identityAssertionId: raw.identityAssertionId, dependencyAssessmentId: dependency.id, constructRelationshipId: row.constructRelationshipId, sourceGovernanceFingerprint, contractVersion: row.contractVersion })}`);
+    const qualificationExpected = externalClaimUuid(`qualification:${canonicalizeExternalClaimValue({ normalizedClaimId: normalized.id, identityAssertionId: raw.identityAssertionId, dependencyAssessmentId: dependency.id, constructRelationshipId: row.constructRelationshipId, contractVersion: row.contractVersion })}`);
     const mismatchedStage = [[raw.document.sourceId, sourceExpected], [raw.documentId, documentExpected], [raw.extractionRunId, extractionExpected], [raw.identityAssertionId, identityExpected], [raw.id, rawExpected], [normalized.id, normalizedExpected], [dependency.id, dependencyExpected], [row.constructRelationshipId, constructExpected], [row.id, qualificationExpected]].find(([actual, expected]) => actual !== expected);
     if (mismatchedStage) throw new ExternalClaimIngestionError("SEMANTIC_FINGERPRINT_MISMATCH", "Persisted stage semantics do not match their deterministic identities.");
     const persistedFingerprint = ingestionFingerprint(raw.document.sourceId, raw.documentId, raw.extractionRunId, raw.identityAssertionId, raw.id, normalized.id, dependency.id, row.constructRelationshipId, row.id);
@@ -111,18 +118,27 @@ export class PrismaExternalClaimIngestionRepository implements ExternalClaimInge
       warnings: strings(row.warnings), limitations: strings(row.limitations),
       firewalls: { canonicalValueCreated: false, synthesisEligibilityGranted: false, recommendationEligibilityGranted: false, persistencePerformed: false }
     } satisfies ExternalClaimIngestionRecord["qualification"];
+    const persistedQualificationFingerprint = qualificationFingerprint({ qualification: { ...historicalQualification, proposedEvidenceInput: row.proposedEvidenceInput ?? undefined }, normalizedClaimId: normalized.id, rawClaimId: raw.id, identityAssertionId: raw.identityAssertionId, dependencyAssessmentId: dependency.id, constructRelationshipId: row.constructRelationshipId, sourceGovernanceRevisionId: row.sourceGovernanceRevisionId, authority: raw.authority as NonNullable<ExternalClaimIngestionRecord["qualification"]["authority"]> });
+    if (persistedQualificationFingerprint !== row.semanticFingerprint) throw new ExternalClaimIngestionError("QUALIFICATION_SEMANTIC_MISMATCH", "Persisted qualification output does not match its durable semantic fingerprint.");
     const conflictMemberships = await this.client.externalEvidenceConflictMember.findMany({ where: { normalizedClaimId: normalized.id }, include: { conflictCase: { include: { resolutions: { orderBy: { decidedAt: "desc" }, take: 1 } } } } });
     const unresolvedConflictIds = conflictMemberships.filter((membership) => membership.conflictCase.resolutions.length === 0).map((membership) => membership.conflictCaseId).sort();
-    const slotPeers = await this.client.externalEvidenceNormalizedClaim.findMany({ where: { claimKey: normalized.claimKey, rawClaim: { documentId: raw.documentId, sourceLocation: raw.sourceLocation, identityAssertion: { equipmentId: raw.identityAssertion.equipmentId, equipmentVariantId: raw.identityAssertion.equipmentVariantId } } }, include: { rawClaim: { include: { extractionRun: true } } } });
-    const operational = slotPeers.sort((a, b) => b.rawClaim.extractionRun.executedAt.getTime() - a.rawClaim.extractionRun.executedAt.getTime() || b.rawClaim.extractionRun.id.localeCompare(a.rawClaim.extractionRun.id) || b.id.localeCompare(a.id))[0];
+    const slotPeers = await this.client.externalEvidenceNormalizedClaim.findMany({ where: { rawClaim: { claimSlotKey: raw.claimSlotKey } }, include: { rawClaim: { include: { extractionRun: true, document: true, supersededBy: true } } } });
+    const leaves = slotPeers.filter((peer) => peer.rawClaim.supersededBy.length === 0);
+    const operational = leaves.sort((a, b) => b.rawClaim.extractionRun.executedAt.getTime() - a.rawClaim.extractionRun.executedAt.getTime() || b.rawClaim.extractionRun.id.localeCompare(a.rawClaim.extractionRun.id) || b.id.localeCompare(a.id))[0];
     const current = operational?.id === normalized.id;
+    const governanceRevisions = await this.client.externalEvidenceSourceGovernanceRevision.findMany({ where: { sourceId: raw.document.sourceId }, include: { supersededBy: true } });
+    const currentGovernanceCandidates = governanceRevisions.filter((revision) => revision.supersededBy.length === 0);
+    const currentGovernance = currentGovernanceCandidates.length === 1 ? currentGovernanceCandidates[0] : undefined;
+    const governanceChanged = currentGovernance?.id !== row.sourceGovernanceRevisionId;
+    const governanceBlocked = currentGovernanceCandidates.length !== 1 || !governanceStateAllowsAuthority(currentGovernance?.state) || (governanceChanged && authorityFor(currentGovernance!.sourceType, raw.claimType) !== historicalQualification.authority);
     const conflictBlocked = unresolvedConflictIds.length > 0;
-    const qualification: ExternalClaimIngestionRecord["qualification"] = conflictBlocked ? { ...historicalQualification, state: "review_required", proposedEvidenceClass: undefined, proposedEvidenceInput: undefined, blockers: [...new Set([...historicalQualification.blockers, "claim_conflicting" as const])].sort() } : historicalQualification;
+    const qualification: ExternalClaimIngestionRecord["qualification"] = conflictBlocked || governanceBlocked ? { ...historicalQualification, state: "review_required", proposedEvidenceClass: undefined, proposedEvidenceInput: undefined, blockers: [...new Set([...historicalQualification.blockers, ...(conflictBlocked ? ["claim_conflicting" as const] : [])])].sort() } : historicalQualification;
     const normalizedLimitations = strings(normalized.limitations);
     const rawLimitations = strings(raw.limitations);
     const quarantineReasons = deriveQuarantine({ identity: raw.identityAssertion.certainty, dependency: dependency.dependencyType, review: normalized.reviewState, qualification: qualification.state, confidence: row.constructRelationship.mappingConfidence, extractionMethod: raw.extractionRun.method, claimType: raw.claimType, vocabularyKnown: !normalizedLimitations.includes("ingestion:vocabulary_unknown"), evidenceClass: normalized.evidenceClass, suspectedSyndication: dependency.dependencyRationale.startsWith("Suspected syndication"), durableBlockers: rawLimitations.filter((item) => item.endsWith("_unresolved") || item.includes("_conflicts_")) });
     if (conflictBlocked) quarantineReasons.push("current_conflict");
     if (!current) quarantineReasons.push("superseded_extraction_lineage");
+    if (governanceBlocked) quarantineReasons.push("source_governance_changed");
     quarantineReasons.sort();
     const extractor = parseExtractorIdentity(raw.extractionRun.extractorId);
     return {
@@ -144,8 +160,8 @@ export class PrismaExternalClaimIngestionRepository implements ExternalClaimInge
         equipmentVariantId: raw.identityAssertion.equipmentVariantId ?? undefined,
         sourceName: raw.document.source.displayName,
         sourceStableKey: raw.document.source.stableKey,
-        sourceType: raw.document.source.sourceType,
-        publisherIdentity: raw.document.source.publisherIdentity ?? undefined,
+        sourceType: row.sourceGovernanceRevision.sourceType,
+        publisherIdentity: row.sourceGovernanceRevision.publisherIdentity ?? undefined,
         documentId: raw.documentId,
         documentReference: raw.document.sourceReference,
         documentRevision: raw.document.revision,
@@ -161,11 +177,15 @@ export class PrismaExternalClaimIngestionRepository implements ExternalClaimInge
         mappingVersion: row.constructRelationship.mappingVersion,
         qualificationState: qualification.state,
         historicalQualificationState: historicalQualification.state,
+        historicalSourceGovernanceRevisionId: row.sourceGovernanceRevisionId,
+        currentSourceGovernanceRevisionId: currentGovernance?.id ?? row.sourceGovernanceRevisionId,
+        sourceGovernanceChanged: governanceChanged || currentGovernanceCandidates.length !== 1,
         current,
         supersededByExtractionRunId: current || operational?.rawClaim.extractionRunId === raw.extractionRunId ? undefined : operational?.rawClaim.extractionRunId,
+        supersessionReason: current ? undefined : operational?.rawClaim.documentId === raw.documentId ? "later_extraction" : "document_revision",
         unresolvedConflictIds,
         reasons: qualification.reasons,
-        blockers: qualification.blockers,
+        blockers: [...qualification.blockers, ...(governanceBlocked ? ["source_governance_changed"] : [])].sort(),
         quarantineReasons,
         nextDecision: nextDecisionFor(quarantineReasons),
         authority: closedAuthority()
@@ -175,6 +195,7 @@ export class PrismaExternalClaimIngestionRepository implements ExternalClaimInge
 
   async persist(unit: ExternalClaimPersistenceUnit): Promise<ExternalClaimIngestionRecord> {
     await this.ensureSource(unit);
+    await this.ensureSourceGovernance(unit);
     await this.ensureDocument(unit);
     await this.ensureExtraction(unit);
     await this.ensureIdentity(unit);
@@ -201,12 +222,15 @@ export class PrismaExternalClaimIngestionRepository implements ExternalClaimInge
       id: unit.qualificationDecisionId,
       normalizedClaimId: unit.normalizedClaimId,
       constructRelationshipId: unit.constructRelationshipId,
+      sourceGovernanceRevisionId: unit.sourceGovernanceRevision.id,
       contractVersion: qualification.contractVersion,
       state: qualification.state,
       proposedEvidenceClass: qualification.proposedEvidenceClass,
+      proposedEvidenceInput: qualification.proposedEvidenceInput === undefined ? undefined : json(qualification.proposedEvidenceInput),
       proposedTargetLevel: qualification.proposedTarget?.level,
       reasons: json(qualification.reasons), gaps: json(qualification.gaps), blockers: json(qualification.blockers), warnings: json(qualification.warnings), limitations: json(qualification.limitations),
-      idempotencyKey: unit.idempotencyKey
+      idempotencyKey: unit.idempotencyKey,
+      semanticFingerprint: qualificationFingerprint({ qualification, normalizedClaimId: unit.normalizedClaimId, rawClaimId: unit.rawClaimId, identityAssertionId: unit.identityAssertionId, dependencyAssessmentId: unit.dependencyAssessmentId, constructRelationshipId: unit.constructRelationshipId, sourceGovernanceRevisionId: unit.sourceGovernanceRevision.id, authority: unit.graph.rawClaims[0]!.authority })
     } });
     const durable = await this.findByIdempotencyKey(unit.idempotencyKey, unit.semanticFingerprint);
     if (!durable) throw new ExternalClaimIngestionError("DURABLE_PROJECTION_MISSING", "Persisted claim could not be reconstructed from durable state.");
@@ -220,6 +244,20 @@ export class PrismaExternalClaimIngestionRepository implements ExternalClaimInge
       return;
     }
     await this.client.externalEvidenceSource.create({ data: { id: unit.sourceId, stableKey: unit.input.source.stableKey, displayName: unit.input.source.displayName, sourceType: unit.input.source.sourceType, publisherIdentity: unit.input.source.publisherIdentity, sourceVersion: unit.input.source.sourceVersion, metadata: json({ ingestionVersion: "1.0", sourceAuthorityResolved: !unit.reviewReady.quarantineReasons.includes("source_authority_unresolved") }) } });
+  }
+
+  private async ensureSourceGovernance(unit: ExternalClaimPersistenceUnit) {
+    const existing = await this.client.externalEvidenceSourceGovernanceRevision.findUnique({ where: { id: unit.sourceGovernanceRevision.id } });
+    if (existing) return;
+    await this.client.externalEvidenceSourceGovernanceRevision.create({ data: {
+      id: unit.sourceGovernanceRevision.id, sourceId: unit.sourceId, revisionNumber: unit.sourceGovernanceRevision.revisionNumber,
+      governanceVersion: unit.sourceGovernanceRevision.version, sourceType: unit.input.source.sourceType,
+      publisherIdentity: unit.input.source.publisherIdentity, authorityScope: json({ claimAuthority: unit.graph.rawClaims[0]!.authority }),
+      dependencyKnowledge: json({ state: "claim_level_assessment_required" }), state: "active",
+      reviewerType: "system", reviewerReference: "ticket-076-source-governance-bootstrap",
+      rationale: "Initial durable governance revision derived from the registered source state.", effectiveAt: unit.sourceGovernanceRevision.effectiveAt,
+      idempotencyKey: `source-governance:${unit.sourceGovernanceRevision.id}`
+    } });
   }
 
   private async ensureDocument(unit: ExternalClaimPersistenceUnit) {
@@ -243,8 +281,8 @@ export class PrismaExternalClaimIngestionRepository implements ExternalClaimInge
     if (await this.client.externalEvidenceClaim.findUnique({ where: { id: unit.rawClaimId } })) return;
     const raw = unit.graph.rawClaims[0]!;
     const document = await this.client.externalEvidenceDocument.findUnique({ where: { id: unit.documentId } });
-    const superseded = document?.supersedesDocumentId ? await this.client.externalEvidenceClaim.findFirst({ where: { documentId: document.supersedesDocumentId, sourceLocation: raw.sourceLocation, claimType: raw.claimType }, orderBy: { createdAt: "desc" } }) : undefined;
-    await this.client.externalEvidenceClaim.create({ data: { id: unit.rawClaimId, documentId: unit.documentId, identityAssertionId: unit.identityAssertionId, extractionRunId: unit.extractionRunId, sourceLocation: raw.sourceLocation, rawText: raw.rawText, rawStructuredValue: raw.rawStructuredValue === undefined ? undefined : json(raw.rawStructuredValue), claimType: raw.claimType, verificationState: raw.verificationState, reviewState: raw.reviewState, authority: raw.authority, authorityRationale: raw.authorityRationale, limitations: json(raw.limitations), supersedesClaimId: superseded?.id } });
+    const superseded = document?.supersedesDocumentId ? await this.client.externalEvidenceClaim.findFirst({ where: { documentId: document.supersedesDocumentId, claimSlotKey: unit.claimSlotKey, supersededBy: { none: {} } }, orderBy: [{ extractionRun: { executedAt: "desc" } }, { id: "desc" }] }) : undefined;
+    await this.client.externalEvidenceClaim.create({ data: { id: unit.rawClaimId, documentId: unit.documentId, identityAssertionId: unit.identityAssertionId, extractionRunId: unit.extractionRunId, sourceLocation: raw.sourceLocation, claimSlotKey: unit.claimSlotKey, rawText: raw.rawText, rawStructuredValue: raw.rawStructuredValue === undefined ? undefined : json(raw.rawStructuredValue), claimType: raw.claimType, verificationState: raw.verificationState, reviewState: raw.reviewState, authority: raw.authority, authorityRationale: raw.authorityRationale, limitations: json(raw.limitations), supersedesClaimId: superseded?.id } });
   }
 
   private async ensureNormalizedClaim(unit: ExternalClaimPersistenceUnit) {
@@ -360,4 +398,13 @@ function authorityFor(sourceType: string, claimType: string) {
   if (sourceType === "retailer") return "secondary" as const;
   if (["independent_expert_review", "user_review", "community_discussion"].includes(sourceType)) return "observational" as const;
   return "not_authoritative_for_claim" as const;
+}
+
+function governanceStateAllowsAuthority(state: string | undefined) {
+  return state === undefined || state === "active";
+}
+
+function initialGovernanceRevision(source: ExternalClaimIngestionInput["source"], authority: string) {
+  const semantics = canonicalizeExternalClaimValue({ sourceStableKey: source.stableKey, revisionNumber: 1, governanceVersion: "1.0", sourceType: source.sourceType, publisherIdentity: source.publisherIdentity, authorityScope: { claimAuthority: authority }, state: "active" });
+  return { id: deterministicUuid(`source-governance:${semantics}`), revisionNumber: 1, version: "1.0", effectiveAt: new Date(0) };
 }

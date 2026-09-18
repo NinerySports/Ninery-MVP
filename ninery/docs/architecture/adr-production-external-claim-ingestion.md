@@ -19,7 +19,7 @@ captured source material
 
 ## Reuse
 
-The implementation reuses the Ticket #069 source, document, extraction, raw claim, normalized claim, identity, dependency, construct relationship, conflict, and supersession semantics; the Ticket #070 qualification function and four outcomes; the Ticket #074 role boundary; and the Ticket #075 relational models and append-only constraints. It adds no evidence class and no Prisma model or migration.
+The implementation reuses the Ticket #069 source, document, extraction, raw claim, normalized claim, identity, dependency, construct relationship, conflict, and supersession semantics; the Ticket #070 qualification function and four outcomes; the Ticket #074 role boundary; and the Ticket #075 relational models and append-only constraints. The remediation adds one append-only source-governance revision model plus nullable lineage fields for claim slots and historical qualification integrity. It adds no evidence class.
 
 ## Revisions And Replay
 
@@ -78,7 +78,9 @@ Document revision identity includes the governed source, external locator, bound
 
 Extraction identity combines the source document revision, a caller-supplied logical run key, execution timestamp, method, extractor identity/version, schema version, and provider/model. A retry must retain the logical run key and execution timestamp and therefore resolves the same lineage. An intentional same-version re-extraction uses a new logical run key and execution timestamp and creates a new historical extraction. A version change also creates new extraction lineage. Wall-clock time is never the sole identity input.
 
-Replay verifies more than the chain of stored UUIDs. The repository reconstructs each deterministic stage ID from persisted semantic fields and fails closed with `SEMANTIC_FINGERPRINT_MISMATCH` when persisted semantics no longer match identity. Trusted source classification, publisher identity, source version, and resolved authority are included in qualification identity, so changed governance produces a new historical qualification rather than returning stale authority.
+Replay verifies more than the chain of stored UUIDs. The repository reconstructs each deterministic stage ID from persisted semantic fields and fails closed with `SEMANTIC_FINGERPRINT_MISMATCH` when persisted semantics no longer match identity. It also recomputes a versioned qualification semantic fingerprint over every material persisted qualification input and output. Altered state, reasons, gaps, blockers, policy version, authority, or related lineage fails closed with `QUALIFICATION_SEMANTIC_MISMATCH`.
+
+Source identity and source governance are separate. A stable source owns append-only governance revisions containing classification, publisher identity, authority scope, dependency knowledge, effective state, reviewer provenance, rationale, and an explicit predecessor. One unsuperseded revision is operationally current; zero or multiple current revisions fail closed. Historical qualifications retain their original governance-revision relation. A later material revision changes only the current operational projection and never rewrites the historical qualification.
 
 Expected PostgreSQL unique and serialization races (P2002, P2034) receive at most three attempts. Other failures are not retried.
 
@@ -88,7 +90,7 @@ Qualification rows remain immutable historical decisions. Every durable review p
 
 Multiple extraction runs over the same document remain one dependent source/document lineage. The run with the latest executedAt value, then deterministic extraction-run ID, is operationally current. Older runs remain replayable and auditable but are marked non-current; re-extraction never creates independent corroboration.
 
-The operational claim slot is the document revision plus stable source location, canonical claim key/property, and resolved equipment/variant scope. The claim key distinguishes independent assertions that share a section and claim type, such as certification and barrel diameter. Re-extractions with the same anchor, property, and identity scope compete only within their own slot. Current selection orders by execution time descending, extraction ID descending, then normalized-claim ID descending, so equal timestamps remain deterministic and an extraction can never supersede itself.
+The operational claim slot is a durable hash of stable source identity, source reference, stable source location, canonical claim key/property, and resolved equipment/variant scope. Document revision is deliberately excluded: it identifies historical observations without breaking continuity of the logical source assertion. The same key governs re-extraction, document-revision succession, and current-state reads. Certification and barrel diameter at one source location therefore remain separate slots. Document successors link only matching slots; current selection spans the complete slot history and reports whether displacement came from a later extraction or a document revision.
 
 Initial writes and exact replay both return the durable projection reconstructed from persisted lineage. That projection retains source classification and publisher, document ID/revision/locator, raw wording and source location, extraction logical run/provider/model/version/time, normalized value/unit/method/version/vocabulary/evidence-class proposal, identity applicability, dependency and syndication state, construct mapping/version/confidence, immutable historical qualification, operational conflict/supersession state, exact quarantine reasons, blockers, and the specific next human decision.
 
