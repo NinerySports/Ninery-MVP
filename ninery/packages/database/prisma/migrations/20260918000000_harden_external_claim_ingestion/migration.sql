@@ -1,5 +1,12 @@
 -- Ticket #076 remediation is additive. Existing evidence and qualification rows
 -- remain immutable and readable; new ingestion rows populate the nullable links.
+-- Prisma Migrate does not guarantee a transaction around PostgreSQL migration
+-- files, so make the protected legacy snapshot boundary explicit. The lock is
+-- held until COMMIT after both sealing and lineage enforcement are installed.
+BEGIN;
+
+LOCK TABLE "external_evidence_qualification_decisions" IN ACCESS EXCLUSIVE MODE;
+
 CREATE TABLE "external_evidence_source_governance_revisions" (
     "id" UUID NOT NULL,
     "sourceId" UUID NOT NULL,
@@ -94,3 +101,5 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER "external_qualification_source_lineage" BEFORE INSERT OR UPDATE ON "external_evidence_qualification_decisions" FOR EACH ROW EXECUTE FUNCTION enforce_external_qualification_source_lineage();
 
 CREATE TRIGGER "external_source_governance_revision_append_only" BEFORE UPDATE OR DELETE ON "external_evidence_source_governance_revisions" FOR EACH ROW EXECUTE FUNCTION prevent_external_evidence_mutation();
+
+COMMIT;

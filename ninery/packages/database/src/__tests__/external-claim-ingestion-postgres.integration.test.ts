@@ -215,6 +215,25 @@ integration("Ticket #076 production ingestion PostgreSQL boundary", async () => 
   await assert.rejects(() => db.externalEvidenceQualificationDecision.create({ data: copyQualification({ sourceId: sourceB.id, sourceGovernanceRevisionId: governanceB.id }) }));
   await assert.rejects(() => db.externalEvidenceLegacyQualificationExemption.create({ data: { qualificationId: randomUUID(), reason: "Arbitrary post-migration exemption." } }));
 
+  // The migration takes this lock before its legacy snapshot and holds it
+  // through ledger sealing, lineage-trigger installation, and commit.
+  const migrationConnection = new PrismaClient({ datasources: { db: { url: url! } } });
+  const concurrentWriter = new PrismaClient({ datasources: { db: { url: url! } } });
+  try {
+    await migrationConnection.$executeRawUnsafe("BEGIN");
+    await migrationConnection.$executeRawUnsafe('LOCK TABLE "external_evidence_qualification_decisions" IN ACCESS EXCLUSIVE MODE');
+    await concurrentWriter.$executeRawUnsafe("SET lock_timeout = '250ms'");
+    await assert.rejects(
+      () => concurrentWriter.externalEvidenceQualificationDecision.create({ data: copyQualification({ sourceId: g1.sourceId, sourceGovernanceRevisionId: g1.id }) }),
+      /lock timeout|canceling statement due to lock timeout/i
+    );
+  } finally {
+    await migrationConnection.$executeRawUnsafe("ROLLBACK").catch(() => undefined);
+    await Promise.all([migrationConnection.$disconnect(), concurrentWriter.$disconnect()]);
+  }
+  const governedAfterLockRelease = await db.externalEvidenceQualificationDecision.create({ data: copyQualification({ sourceId: g1.sourceId, sourceGovernanceRevisionId: g1.id }) });
+  assert.equal(governedAfterLockRelease.sourceGovernanceRevisionId, g1.id);
+
   async function registerSource(value: ExternalClaimIngestionInput) {
     await db!.externalEvidenceSource.upsert({ where: { stableKey: value.source.stableKey }, update: {}, create: { id: externalClaimUuid(`source:${value.source.stableKey}`), stableKey: value.source.stableKey, displayName: value.source.displayName, sourceType: value.source.sourceType, publisherIdentity: value.source.publisherIdentity, sourceVersion: value.source.sourceVersion, metadata: { sourceAuthorityResolved: true } } });
   }
