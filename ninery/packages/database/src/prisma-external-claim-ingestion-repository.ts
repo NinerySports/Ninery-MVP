@@ -3,6 +3,7 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 import { canonicalizeExternalClaimValue, externalClaimUuid, identitySemantics, qualificationFingerprint, ExternalClaimIngestionError, type ExternalClaimIngestionInput, type ExternalClaimIngestionRecord, type ExternalClaimIngestionRepository, type ExternalClaimPersistenceUnit, type ExternalClaimProposal, type ExternalClaimTrustedResolution } from "./external-claim-ingestion.js";
 
 type Client = PrismaClient | Prisma.TransactionClient;
+export const SOURCE_GOVERNANCE_OPERATIONAL_POLICY_VERSION = "1.0";
 
 export class PrismaExternalClaimIngestionRepository implements ExternalClaimIngestionRepository {
   constructor(private readonly client: Client, private readonly inTransaction = false) {}
@@ -38,7 +39,10 @@ export class PrismaExternalClaimIngestionRepository implements ExternalClaimInge
     if (!persistedSource || sourceMetadata?.sourceAuthorityResolved === false || (persistedSource.governanceRevisions.length > 0 && !governance)) blockers.push("source_authority_unresolved");
     const governedSourceType = governance?.sourceType ?? persistedSource?.sourceType;
     const governedPublisher = governance?.publisherIdentity ?? persistedSource?.publisherIdentity;
-    if (persistedSource && (governedSourceType !== input.source.sourceType || governedPublisher !== (input.source.publisherIdentity ?? null))) blockers.push("source_proposal_conflicts_with_registry");
+    if (persistedSource && (persistedSource.sourceType !== input.source.sourceType || persistedSource.publisherIdentity !== (input.source.publisherIdentity ?? null))) blockers.push("source_proposal_conflicts_with_registry");
+    const governanceAssessment = governance && governedSourceType
+      ? assessCurrentGovernance([governance], claim.claimType, authorityFor(governedSourceType, claim.claimType))
+      : undefined;
 
     const requestedEquipmentId = claim.identity.equipmentId ?? input.targetIdentity.equipmentId;
     const requestedVariantId = claim.identity.equipmentVariantId ?? input.targetIdentity.equipmentVariantId;
@@ -62,7 +66,7 @@ export class PrismaExternalClaimIngestionRepository implements ExternalClaimInge
       equipmentVariantId: exactVariant ? variant!.id : undefined,
       limitations: [...claim.identity.limitations, ...blockers.filter((blocker) => blocker.startsWith("catalog_"))]
     } : { ...claim.identity, certainty: "unresolved" as const, equipmentId: undefined, equipmentVariantId: undefined, limitations: [...claim.identity.limitations, ...blockers.filter((blocker) => blocker.startsWith("catalog_"))] };
-    const authority = persistedSource && governanceStateAllowsAuthority(governance?.state) && !blockers.some((blocker) => blocker.startsWith("source_governance_") || blocker === "source_proposal_conflicts_with_registry")
+    const authority = persistedSource && governanceStateAllowsAuthority(governance?.state) && (!governanceAssessment || governanceAssessment.blockers.length === 0) && !blockers.some((blocker) => blocker.startsWith("source_governance_") || blocker === "source_proposal_conflicts_with_registry")
       ? authorityFor(governedSourceType!, claim.claimType)
       : "unknown" as const;
     const governanceRevision = governance ? { id: governance.id, revisionNumber: governance.revisionNumber, version: governance.governanceVersion, effectiveAt: governance.effectiveAt } : initialGovernanceRevision(source, authority);
@@ -89,6 +93,7 @@ export class PrismaExternalClaimIngestionRepository implements ExternalClaimInge
     const extractionExpected = externalClaimUuid(`extraction:${canonicalizeExternalClaimValue({ documentId: raw.documentId, logicalRunKey: extractorIdentity.logicalRunKey, method: raw.extractionRun.method, extractorType: raw.extractionRun.extractorType, extractorId: extractorIdentity.extractorId, extractorVersion: raw.extractionRun.extractorVersion, schemaVersion: raw.extractionRun.schemaVersion, providerModelId: extractorIdentity.providerModelId, executedAt: raw.extractionRun.executedAt.toISOString() })}`);
     const identityExpected = externalClaimUuid(`identity:${canonicalizeExternalClaimValue(identitySemantics({ id: raw.identityAssertion.id, certainty: raw.identityAssertion.certainty, manufacturer: raw.identityAssertion.manufacturer ?? undefined, model: raw.identityAssertion.model ?? undefined, modelYear: raw.identityAssertion.modelYear ?? undefined, certification: raw.identityAssertion.certification ?? undefined, constructionRevision: raw.identityAssertion.constructionRevision ?? undefined, lengthInches: raw.identityAssertion.lengthInches === null ? undefined : Number(raw.identityAssertion.lengthInches), weightOunces: raw.identityAssertion.weightOunces === null ? undefined : Number(raw.identityAssertion.weightOunces), drop: raw.identityAssertion.drop ?? undefined, sku: raw.identityAssertion.sku ?? undefined, manufacturerProductId: raw.identityAssertion.manufacturerProductId ?? undefined, upc: raw.identityAssertion.upc ?? undefined, equipmentId: raw.identityAssertion.equipmentId ?? undefined, equipmentVariantId: raw.identityAssertion.equipmentVariantId ?? undefined, limitations: strings(raw.identityAssertion.limitations) }))}`);
     if (!raw.claimSlotKey || !row.sourceGovernanceRevisionId || !row.sourceGovernanceRevision || !row.semanticFingerprint) throw new ExternalClaimIngestionError("PERSISTED_LINEAGE_INCOMPLETE", "Ticket #076 lineage lacks claim-slot, governance-revision, or qualification semantic metadata.");
+    if (row.sourceId !== raw.document.sourceId || row.sourceGovernanceRevision.sourceId !== raw.document.sourceId) throw new ExternalClaimIngestionError("SOURCE_GOVERNANCE_LINEAGE_MISMATCH", "Qualification governance must belong to the claim's logical source.");
     const rawExpected = externalClaimUuid(`raw:${canonicalizeExternalClaimValue({ documentId: raw.documentId, extractionRunId: raw.extractionRunId, identityAssertionId: raw.identityAssertionId, claimSlotKey: raw.claimSlotKey, rawText: raw.rawText ?? undefined, rawStructuredValue: raw.rawStructuredValue ?? undefined, claimType: raw.claimType, sourceLocation: raw.sourceLocation ?? undefined })}`);
     const normalizedLimitationsForIdentity = strings(normalized.limitations).filter((item) => !item.startsWith("ingestion:vocabulary_")).sort();
     const normalizedExpected = externalClaimUuid(`normalized:${canonicalizeExternalClaimValue({ rawClaimId: normalized.rawClaimId, claimKey: normalized.claimKey, value: normalized.normalizedValue, unit: normalized.normalizedUnit ?? undefined, originalValue: normalized.originalValue ?? undefined, originalUnit: normalized.originalUnit ?? undefined, method: normalized.normalizationMethod, version: normalized.normalizationVersion, vocabularyKnown: !strings(normalized.limitations).includes("ingestion:vocabulary_unknown"), evidenceClass: normalized.evidenceClass, limitations: normalizedLimitationsForIdentity })}`);
@@ -130,7 +135,8 @@ export class PrismaExternalClaimIngestionRepository implements ExternalClaimInge
     const currentGovernanceCandidates = governanceRevisions.filter((revision) => revision.supersededBy.length === 0);
     const currentGovernance = currentGovernanceCandidates.length === 1 ? currentGovernanceCandidates[0] : undefined;
     const governanceChanged = currentGovernance?.id !== row.sourceGovernanceRevisionId;
-    const governanceBlocked = currentGovernanceCandidates.length !== 1 || !governanceStateAllowsAuthority(currentGovernance?.state) || (governanceChanged && authorityFor(currentGovernance!.sourceType, raw.claimType) !== historicalQualification.authority);
+    const governanceAssessment = assessCurrentGovernance(currentGovernanceCandidates, raw.claimType, historicalQualification.authority ?? "unknown");
+    const governanceBlocked = governanceAssessment.blockers.length > 0;
     const conflictBlocked = unresolvedConflictIds.length > 0;
     const qualification: ExternalClaimIngestionRecord["qualification"] = conflictBlocked || governanceBlocked ? { ...historicalQualification, state: "review_required", proposedEvidenceClass: undefined, proposedEvidenceInput: undefined, blockers: [...new Set([...historicalQualification.blockers, ...(conflictBlocked ? ["claim_conflicting" as const] : [])])].sort() } : historicalQualification;
     const normalizedLimitations = strings(normalized.limitations);
@@ -138,7 +144,7 @@ export class PrismaExternalClaimIngestionRepository implements ExternalClaimInge
     const quarantineReasons = deriveQuarantine({ identity: raw.identityAssertion.certainty, dependency: dependency.dependencyType, review: normalized.reviewState, qualification: qualification.state, confidence: row.constructRelationship.mappingConfidence, extractionMethod: raw.extractionRun.method, claimType: raw.claimType, vocabularyKnown: !normalizedLimitations.includes("ingestion:vocabulary_unknown"), evidenceClass: normalized.evidenceClass, suspectedSyndication: dependency.dependencyRationale.startsWith("Suspected syndication"), durableBlockers: rawLimitations.filter((item) => item.endsWith("_unresolved") || item.includes("_conflicts_")) });
     if (conflictBlocked) quarantineReasons.push("current_conflict");
     if (!current) quarantineReasons.push("superseded_extraction_lineage");
-    if (governanceBlocked) quarantineReasons.push("source_governance_changed");
+    if (governanceBlocked) quarantineReasons.push(...governanceAssessment.quarantineReasons);
     quarantineReasons.sort();
     const extractor = parseExtractorIdentity(raw.extractionRun.extractorId);
     return {
@@ -160,8 +166,8 @@ export class PrismaExternalClaimIngestionRepository implements ExternalClaimInge
         equipmentVariantId: raw.identityAssertion.equipmentVariantId ?? undefined,
         sourceName: raw.document.source.displayName,
         sourceStableKey: raw.document.source.stableKey,
-        sourceType: row.sourceGovernanceRevision.sourceType,
-        publisherIdentity: row.sourceGovernanceRevision.publisherIdentity ?? undefined,
+        sourceType: currentGovernance?.sourceType ?? row.sourceGovernanceRevision.sourceType,
+        publisherIdentity: currentGovernance?.publisherIdentity ?? row.sourceGovernanceRevision.publisherIdentity ?? undefined,
         documentId: raw.documentId,
         documentReference: raw.document.sourceReference,
         documentRevision: raw.document.revision,
@@ -170,7 +176,7 @@ export class PrismaExternalClaimIngestionRepository implements ExternalClaimInge
         normalizedProposal: { claimKey: normalized.claimKey, value: normalized.normalizedValue, unit: normalized.normalizedUnit ?? undefined, method: normalized.normalizationMethod, version: normalized.normalizationVersion, vocabularyKnown: !normalizedLimitations.includes("ingestion:vocabulary_unknown"), evidenceClass: parseEvidenceClass(normalized.evidenceClass) },
         extraction: { runId: raw.extractionRunId, logicalRunKey: extractor.logicalRunKey, method: raw.extractionRun.method, extractorId: extractor.extractorId, extractorVersion: raw.extractionRun.extractorVersion, providerModelId: extractor.providerModelId, executedAt: raw.extractionRun.executedAt },
         identityCertainty: String(raw.identityAssertion.certainty) as ExternalClaimIngestionRecord["reviewReady"]["identityCertainty"],
-        dependencyState: String(dependency.dependencyType) as ExternalClaimIngestionRecord["reviewReady"]["dependencyState"],
+        dependencyState: governanceAssessment.dependencyBlocked ? "unknown_dependency" : String(dependency.dependencyType) as ExternalClaimIngestionRecord["reviewReady"]["dependencyState"],
         suspectedSyndication: dependency.dependencyRationale.startsWith("Suspected syndication"),
         proposedConstruct: row.constructRelationship.proposedConstruct.startsWith("not_applicable:") ? undefined : row.constructRelationship.proposedConstruct,
         mappingConfidence: row.constructRelationship.mappingConfidence,
@@ -185,7 +191,7 @@ export class PrismaExternalClaimIngestionRepository implements ExternalClaimInge
         supersessionReason: current ? undefined : operational?.rawClaim.documentId === raw.documentId ? "later_extraction" : "document_revision",
         unresolvedConflictIds,
         reasons: qualification.reasons,
-        blockers: [...qualification.blockers, ...(governanceBlocked ? ["source_governance_changed"] : [])].sort(),
+        blockers: [...qualification.blockers, ...governanceAssessment.blockers].sort(),
         quarantineReasons,
         nextDecision: nextDecisionFor(quarantineReasons),
         authority: closedAuthority()
@@ -223,6 +229,7 @@ export class PrismaExternalClaimIngestionRepository implements ExternalClaimInge
       normalizedClaimId: unit.normalizedClaimId,
       constructRelationshipId: unit.constructRelationshipId,
       sourceGovernanceRevisionId: unit.sourceGovernanceRevision.id,
+      sourceId: unit.sourceId,
       contractVersion: qualification.contractVersion,
       state: qualification.state,
       proposedEvidenceClass: qualification.proposedEvidenceClass,
@@ -248,7 +255,10 @@ export class PrismaExternalClaimIngestionRepository implements ExternalClaimInge
 
   private async ensureSourceGovernance(unit: ExternalClaimPersistenceUnit) {
     const existing = await this.client.externalEvidenceSourceGovernanceRevision.findUnique({ where: { id: unit.sourceGovernanceRevision.id } });
-    if (existing) return;
+    if (existing) {
+      if (existing.sourceId !== unit.sourceId) throw new ExternalClaimIngestionError("SOURCE_GOVERNANCE_LINEAGE_MISMATCH", "Governance revision belongs to a different logical source.");
+      return;
+    }
     await this.client.externalEvidenceSourceGovernanceRevision.create({ data: {
       id: unit.sourceGovernanceRevision.id, sourceId: unit.sourceId, revisionNumber: unit.sourceGovernanceRevision.revisionNumber,
       governanceVersion: unit.sourceGovernanceRevision.version, sourceType: unit.input.source.sourceType,
@@ -398,6 +408,77 @@ function authorityFor(sourceType: string, claimType: string) {
   if (sourceType === "retailer") return "secondary" as const;
   if (["independent_expert_review", "user_review", "community_discussion"].includes(sourceType)) return "observational" as const;
   return "not_authoritative_for_claim" as const;
+}
+
+type GovernanceRevisionForAssessment = {
+  sourceType: string;
+  state: string;
+  authorityScope: Prisma.JsonValue;
+  dependencyKnowledge: Prisma.JsonValue;
+};
+
+export function assessCurrentGovernance(
+  candidates: readonly GovernanceRevisionForAssessment[],
+  claimType: string,
+  historicalAuthority: string
+): { policyVersion: string; blockers: string[]; quarantineReasons: string[]; dependencyBlocked: boolean } {
+  if (candidates.length !== 1) return {
+    policyVersion: SOURCE_GOVERNANCE_OPERATIONAL_POLICY_VERSION,
+    blockers: ["source_governance_ambiguous"],
+    quarantineReasons: ["source_governance_ambiguous"],
+    dependencyBlocked: true
+  };
+  const governance = candidates[0]!;
+  const blockers: string[] = [];
+  const quarantineReasons: string[] = [];
+  if (!governanceStateAllowsAuthority(governance.state)) {
+    blockers.push("source_governance_state_inactive");
+    quarantineReasons.push("source_governance_state_inactive");
+  }
+
+  const scope = record(governance.authorityScope);
+  const scopedAuthority = typeof scope?.claimAuthority === "string" ? scope.claimAuthority : undefined;
+  const authorizedClaimTypes = stringArray(scope?.authorizedClaimTypes);
+  const claimTypesMalformed = scope !== undefined && Object.hasOwn(scope, "authorizedClaimTypes") && authorizedClaimTypes === undefined;
+  const typeCovered = !claimTypesMalformed && (authorizedClaimTypes === undefined || authorizedClaimTypes.includes(claimType));
+  const classifiedAuthority = authorityFor(governance.sourceType, claimType);
+  const effectiveAuthority = typeCovered && scopedAuthority && authorityRank(scopedAuthority) <= authorityRank(classifiedAuthority)
+    ? scopedAuthority
+    : "not_authoritative_for_claim";
+  if (!scopedAuthority || !typeCovered || effectiveAuthority !== historicalAuthority) {
+    blockers.push("source_governance_authority_scope_changed");
+    quarantineReasons.push("source_governance_authority_scope_changed");
+  }
+
+  const dependency = record(governance.dependencyKnowledge);
+  const dependencyState = typeof dependency?.state === "string" ? dependency.state : "unknown";
+  const dependencyBlocked = dependencyState !== "claim_level_assessment_required";
+  if (dependencyBlocked) {
+    blockers.push("source_governance_dependency_unresolved");
+    quarantineReasons.push("source_governance_dependency_unresolved");
+  }
+  return {
+    policyVersion: SOURCE_GOVERNANCE_OPERATIONAL_POLICY_VERSION,
+    blockers: [...new Set(blockers)].sort(),
+    quarantineReasons: [...new Set(quarantineReasons)].sort(),
+    dependencyBlocked
+  };
+}
+
+function record(value: Prisma.JsonValue): Record<string, Prisma.JsonValue> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, Prisma.JsonValue> : undefined;
+}
+function stringArray(value: Prisma.JsonValue | undefined): string[] | undefined {
+  return Array.isArray(value) && value.every((item) => typeof item === "string") ? value as string[] : undefined;
+}
+function authorityRank(value: string) {
+  switch (value) {
+    case "authoritative": return 4;
+    case "primary": return 3;
+    case "secondary": return 2;
+    case "observational": return 1;
+    default: return 0;
+  }
 }
 
 function governanceStateAllowsAuthority(state: string | undefined) {

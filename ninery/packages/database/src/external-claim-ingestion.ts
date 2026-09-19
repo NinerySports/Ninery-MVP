@@ -122,12 +122,22 @@ export interface ExternalClaimIngestionRepository {
   isRecognizedConcurrencyError(error: unknown): boolean;
 }
 
+export const EXTERNAL_CLAIM_CONCURRENCY_MAX_ATTEMPTS = 3;
+export type ExternalClaimRetryEvent = {
+  readonly phase: "attempt" | "retryable_error" | "success";
+  readonly attempt: number;
+  readonly durableRead?: boolean;
+};
+
 export class ExternalClaimIngestionError extends Error {
   constructor(readonly code: string, message: string) { super(message); this.name = "ExternalClaimIngestionError"; }
 }
 
 export class GovernedExternalClaimIngestionService {
-  constructor(private readonly repository: ExternalClaimIngestionRepository) {}
+  constructor(
+    private readonly repository: ExternalClaimIngestionRepository,
+    private readonly observeRetry?: (event: ExternalClaimRetryEvent) => void
+  ) {}
 
   async ingest(input: ExternalClaimIngestionInput): Promise<ExternalClaimIngestionBatchResult> {
     validateInput(input);
@@ -138,14 +148,19 @@ export class GovernedExternalClaimIngestionService {
         const trusted = await this.repository.resolveTrustedContext(input, claim);
         const unit = buildPersistenceUnit(input, claim, trusted);
         let record: ExternalClaimIngestionRecord | undefined;
-        for (let attempt = 0; attempt < 3 && !record; attempt += 1) {
+        for (let attempt = 0; attempt < EXTERNAL_CLAIM_CONCURRENCY_MAX_ATTEMPTS && !record; attempt += 1) {
+          this.observeRetry?.({ phase: "attempt", attempt: attempt + 1 });
           try {
-            record = await this.repository.transaction(async (repository) => {
+            const outcome = await this.repository.transaction(async (repository) => {
               const existing = await repository.findByIdempotencyKey(unit.idempotencyKey, unit.semanticFingerprint);
-              return existing ?? repository.persist(unit);
+              return { record: existing ?? await repository.persist(unit), durableRead: Boolean(existing) };
             });
+            record = outcome.record;
+            this.observeRetry?.({ phase: "success", attempt: attempt + 1, durableRead: outcome.durableRead });
           } catch (error) {
-            if (attempt === 2 || !this.repository.isRecognizedConcurrencyError(error)) throw error;
+            if (!this.repository.isRecognizedConcurrencyError(error)) throw error;
+            this.observeRetry?.({ phase: "retryable_error", attempt: attempt + 1 });
+            if (attempt === EXTERNAL_CLAIM_CONCURRENCY_MAX_ATTEMPTS - 1) throw error;
           }
         }
         if (!record) throw new ExternalClaimIngestionError("CONCURRENCY_RETRY_EXHAUSTED", "Concurrent ingestion did not converge within the bounded retry policy.");

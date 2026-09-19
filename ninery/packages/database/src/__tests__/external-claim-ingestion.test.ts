@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
+import { Prisma } from "@prisma/client";
 import {
   CONTAMINATED_ATLAS_EQUIPMENT_ID,
   CONTAMINATED_ATLAS_VARIANT_ID,
+  EXTERNAL_CLAIM_CONCURRENCY_MAX_ATTEMPTS,
   ExternalClaimIngestionError,
   GovernedExternalClaimIngestionService,
   qualificationFingerprint,
@@ -12,6 +15,7 @@ import {
   type ExternalClaimPersistenceUnit
 } from "../external-claim-ingestion.js";
 import { buildAtlasUsssaProductionCaptureInputs } from "../atlas-usssa-production-ingestion.fixture.js";
+import { assessCurrentGovernance, PrismaExternalClaimIngestionRepository, SOURCE_GOVERNANCE_OPERATIONAL_POLICY_VERSION } from "../prisma-external-claim-ingestion-repository.js";
 
 const CLEAN_EQUIPMENT = "748ae67e-0b10-40d6-8ef6-28d6953d1d40";
 const CLEAN_VARIANT = "0844a8e0-8b9a-42ba-9b6f-50f288832e58";
@@ -22,7 +26,7 @@ class MemoryRepository implements ExternalClaimIngestionRepository {
   failKeys = new Set<string>();
   resolutionBlockers: string[] = [];
   transaction<T>(operation: (repository: ExternalClaimIngestionRepository) => Promise<T>): Promise<T> { return operation(this); }
-  isRecognizedConcurrencyError() { return false; }
+  isRecognizedConcurrencyError(_error?: unknown) { return false; }
   async resolveTrustedContext(input: ExternalClaimIngestionInput, claim: ExternalClaimIngestionInput["claims"][number]) {
     return { source: input.source, identity: this.resolutionBlockers.length ? { ...claim.identity, certainty: "unresolved" as const, equipmentId: undefined, equipmentVariantId: undefined } : claim.identity, authority: this.resolutionBlockers.length ? "unknown" as const : claim.authority, governanceRevision: { id: "11111111-1111-5111-a111-111111111111", revisionNumber: 1, version: "1.0", effectiveAt: new Date(0) }, blockers: this.resolutionBlockers };
   }
@@ -40,6 +44,22 @@ class MemoryRepository implements ExternalClaimIngestionRepository {
   }
 }
 
+const retryable = new Error("synthetic recognized concurrency failure");
+
+class RetryRepository extends MemoryRepository {
+  attempts = 0;
+  constructor(private readonly mode: "commit_then_retry" | "exhaust" | "nonretryable") { super(); }
+  override async transaction<T>(operation: (repository: ExternalClaimIngestionRepository) => Promise<T>): Promise<T> {
+    this.attempts += 1;
+    if (this.mode === "nonretryable") throw new Error("arbitrary failure");
+    if (this.mode === "exhaust") throw retryable;
+    const result = await operation(this);
+    if (this.attempts === 1) throw retryable;
+    return result;
+  }
+  override isRecognizedConcurrencyError(error: unknown) { return error === retryable; }
+}
+
 test("deterministic manufacturer specification reaches review-ready qualification with every authority closed", async () => {
   const repository = new MemoryRepository();
   const result = await new GovernedExternalClaimIngestionService(repository).ingest(base());
@@ -54,6 +74,64 @@ test("exact replay creates no duplicate current-state knowledge", async () => {
   const repository = new MemoryRepository(); const service = new GovernedExternalClaimIngestionService(repository);
   const first = await service.ingest(base()); const second = await service.ingest(base());
   assert.deepEqual(second, first); assert.equal(repository.units.length, 1); assert.equal(repository.records.size, 1);
+});
+
+test("recognized concurrency retry rereads the durable winner and reports bounded attempts", async () => {
+  const repository = new RetryRepository("commit_then_retry");
+  const events: Array<{ phase: string; attempt: number; durableRead?: boolean }> = [];
+  const result = await new GovernedExternalClaimIngestionService(repository, (event) => events.push(event)).ingest(base());
+  assert.equal(result.failed.length, 0);
+  assert.equal(repository.attempts, 2);
+  assert.deepEqual(events.map(({ phase, attempt }) => ({ phase, attempt })), [
+    { phase: "attempt", attempt: 1 }, { phase: "retryable_error", attempt: 1 },
+    { phase: "attempt", attempt: 2 }, { phase: "success", attempt: 2 }
+  ]);
+  assert.equal(events.at(-1)?.durableRead, true);
+  assert.equal(repository.units.length, 1);
+});
+
+test("recognized concurrency retries stop at the exported three-attempt bound", async () => {
+  const repository = new RetryRepository("exhaust");
+  const events: Array<{ phase: string; attempt: number }> = [];
+  const result = await new GovernedExternalClaimIngestionService(repository, (event) => events.push(event)).ingest(base());
+  assert.equal(result.failed[0]?.code, "CLAIM_PIPELINE_FAILED");
+  assert.equal(repository.attempts, EXTERNAL_CLAIM_CONCURRENCY_MAX_ATTEMPTS);
+  assert.equal(events.filter((event) => event.phase === "retryable_error").length, EXTERNAL_CLAIM_CONCURRENCY_MAX_ATTEMPTS);
+});
+
+test("nonretryable failures escape the retry loop immediately", async () => {
+  const repository = new RetryRepository("nonretryable");
+  const result = await new GovernedExternalClaimIngestionService(repository).ingest(base());
+  assert.equal(result.failed[0]?.message, "arbitrary failure");
+  assert.equal(repository.attempts, 1);
+});
+
+test("Prisma retry classification permits only uniqueness and serializable-conflict errors", () => {
+  const repository = Object.create(PrismaExternalClaimIngestionRepository.prototype) as PrismaExternalClaimIngestionRepository;
+  const prismaError = (code: string) => new Prisma.PrismaClientKnownRequestError(code, { code, clientVersion: "test" });
+  assert.equal(repository.isRecognizedConcurrencyError(prismaError("P2002")), true);
+  assert.equal(repository.isRecognizedConcurrencyError(prismaError("P2034")), true);
+  assert.equal(repository.isRecognizedConcurrencyError(prismaError("P2025")), false);
+  assert.equal(repository.isRecognizedConcurrencyError(new Error("arbitrary")), false);
+});
+
+test("governance policy is versioned and fails closed for authority, dependency, state, and ambiguity", () => {
+  const active = { sourceType: "manufacturer_primary", state: "active", authorityScope: { claimAuthority: "authoritative" }, dependencyKnowledge: { state: "claim_level_assessment_required" } };
+  assert.deepEqual(assessCurrentGovernance([active], "factual_specification", "authoritative"), { policyVersion: SOURCE_GOVERNANCE_OPERATIONAL_POLICY_VERSION, blockers: [], quarantineReasons: [], dependencyBlocked: false });
+  assert.ok(assessCurrentGovernance([{ ...active, authorityScope: { claimAuthority: "authoritative", authorizedClaimTypes: [] } }], "factual_specification", "authoritative").blockers.includes("source_governance_authority_scope_changed"));
+  assert.ok(assessCurrentGovernance([{ ...active, authorityScope: { claimAuthority: "authoritative", authorizedClaimTypes: "invalid" } }], "factual_specification", "authoritative").blockers.includes("source_governance_authority_scope_changed"));
+  assert.ok(assessCurrentGovernance([{ ...active, dependencyKnowledge: { state: "unknown" } }], "factual_specification", "authoritative").blockers.includes("source_governance_dependency_unresolved"));
+  assert.ok(assessCurrentGovernance([{ ...active, state: "unexpected" }], "factual_specification", "authoritative").blockers.includes("source_governance_state_inactive"));
+  assert.ok(assessCurrentGovernance([active, active], "factual_specification", "authoritative").blockers.includes("source_governance_ambiguous"));
+});
+
+test("Ticket #076 migration enforces same-source governance at the PostgreSQL boundary", () => {
+  const sql = readFileSync("prisma/migrations/20260918000000_harden_external_claim_ingestion/migration.sql", "utf8");
+  assert.ok(sql.includes('FOREIGN KEY ("supersedesRevisionId", "sourceId")'));
+  assert.ok(sql.includes('FOREIGN KEY ("sourceGovernanceRevisionId", "sourceId")'));
+  assert.ok(sql.includes("enforce_external_qualification_source_lineage"));
+  assert.ok(sql.includes("qualification governance source does not match claim source"));
+  assert.equal(/\bDROP\s+(TABLE|COLUMN)\b/i.test(sql), false);
 });
 
 test("qualification semantic fingerprint covers material persisted output", async () => {

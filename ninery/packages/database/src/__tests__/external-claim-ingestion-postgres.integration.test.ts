@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { CONTAMINATED_ATLAS_EQUIPMENT_ID, CONTAMINATED_ATLAS_VARIANT_ID, externalClaimUuid, GovernedExternalClaimIngestionService, qualificationFingerprint, type ExternalClaimIngestionInput } from "../external-claim-ingestion.js";
 import { PrismaExternalClaimIngestionRepository } from "../prisma-external-claim-ingestion-repository.js";
 
@@ -15,6 +15,7 @@ integration("Ticket #076 production ingestion PostgreSQL boundary", async () => 
   const variant = await db.equipmentVariant.create({ data: { equipmentId: equipment.id, lengthInches: 30, weightOunces: 20, dropWeight: -10, sku: `INT-${randomUUID()}` } });
   const otherVariant = await db.equipmentVariant.create({ data: { equipmentId: equipment.id, lengthInches: 31, weightOunces: 21, dropWeight: -10, sku: `INT-${randomUUID()}` } });
   const reverseVariant = await db.equipmentVariant.create({ data: { equipmentId: equipment.id, lengthInches: 32, weightOunces: 22, dropWeight: -10, sku: `INT-${randomUUID()}` } });
+  const forwardVariant = await db.equipmentVariant.create({ data: { equipmentId: equipment.id, lengthInches: 33, weightOunces: 23, dropWeight: -10, sku: `INT-${randomUUID()}` } });
   const service = new GovernedExternalClaimIngestionService(new PrismaExternalClaimIngestionRepository(db));
 
   // 1-2: exact replay and complete durable projection equality.
@@ -36,8 +37,8 @@ integration("Ticket #076 production ingestion PostgreSQL boundary", async () => 
   // 6: the relational trigger prevents mutation before repository verification;
   // qualification fingerprint behavior is tested without weakening that trigger.
   await assert.rejects(() => db.externalEvidenceQualificationDecision.update({ where: { id: first.succeeded[0]!.qualificationDecisionId }, data: { state: "not_eligible" } }));
-  const persistedQualification = await db.externalEvidenceQualificationDecision.findUniqueOrThrow({ where: { id: first.succeeded[0]!.qualificationDecisionId } });
-  const validFingerprint = persistedQualification.semanticFingerprint;
+  const persistedQualificationRow = await db.externalEvidenceQualificationDecision.findUniqueOrThrow({ where: { id: first.succeeded[0]!.qualificationDecisionId } });
+  const validFingerprint = persistedQualificationRow.semanticFingerprint;
   const alteredFingerprint = qualificationFingerprint({ qualification: { ...first.succeeded[0]!.qualification, state: "not_eligible" }, normalizedClaimId: first.succeeded[0]!.normalizedClaimId, rawClaimId: first.succeeded[0]!.rawClaimId, identityAssertionId: first.succeeded[0]!.identityAssertionId, dependencyAssessmentId: first.succeeded[0]!.dependencyAssessmentId, constructRelationshipId: first.succeeded[0]!.constructRelationshipId, sourceGovernanceRevisionId: first.succeeded[0]!.reviewReady.historicalSourceGovernanceRevisionId, authority: first.succeeded[0]!.qualification.authority! });
   assert.notEqual(alteredFingerprint, validFingerprint);
 
@@ -77,10 +78,24 @@ integration("Ticket #076 production ingestion PostgreSQL boundary", async () => 
   assert.equal(earlierAfterConflict.succeeded[0]!.reviewReady.historicalQualificationState, "qualified");
   assert.equal(earlierAfterConflict.succeeded[0]!.reviewReady.qualificationState, "review_required");
   assert.deepEqual(await service.ingest(input), earlierAfterConflict);
+  const forward = fixture(equipment.id, forwardVariant.id); await registerSource(forward);
+  const forwardBInput = withClaim(forward, { normalization: { ...forward.claims[0]!.normalization, value: 31 } });
+  const forwardAResult = (await service.ingest(forward)).succeeded[0]!;
+  const forwardBResult = (await service.ingest(forwardBInput)).succeeded[0]!;
   const reverse = fixture(equipment.id, reverseVariant.id); await registerSource(reverse);
   const reverseBInput = withClaim(reverse, { normalization: { ...reverse.claims[0]!.normalization, value: 31 } });
-  await service.ingest(reverseBInput); assert.equal((await service.ingest(reverse)).succeeded[0]!.qualification.state, "review_required");
-  assert.equal((await service.ingest(reverseBInput)).succeeded[0]!.reviewReady.qualificationState, "review_required");
+  const reverseBResult = (await service.ingest(reverseBInput)).succeeded[0]!;
+  const reverseAResult = (await service.ingest(reverse)).succeeded[0]!;
+  for (const record of [forwardAResult, forwardBResult, reverseAResult, reverseBResult]) {
+    const currentRecord = (await service.ingest(record.normalizedClaimId === forwardAResult.normalizedClaimId ? forward : record.normalizedClaimId === forwardBResult.normalizedClaimId ? forwardBInput : record.normalizedClaimId === reverseAResult.normalizedClaimId ? reverse : reverseBInput)).succeeded[0]!;
+    assert.equal(currentRecord.reviewReady.qualificationState, "review_required");
+    assert.ok(currentRecord.reviewReady.blockers.includes("claim_conflicting"));
+    assert.equal(currentRecord.reviewReady.unresolvedConflictIds.length, 1);
+  }
+  const forwardHistory = await db.externalEvidenceNormalizedClaim.findMany({ where: { id: { in: [forwardAResult.normalizedClaimId, forwardBResult.normalizedClaimId] } }, orderBy: { createdAt: "asc" } });
+  const reverseHistory = await db.externalEvidenceNormalizedClaim.findMany({ where: { id: { in: [reverseAResult.normalizedClaimId, reverseBResult.normalizedClaimId] } }, orderBy: { createdAt: "asc" } });
+  assert.deepEqual(forwardHistory.map((row) => row.normalizedValue), [30, 31]);
+  assert.deepEqual(reverseHistory.map((row) => row.normalizedValue), [31, 30]);
 
   // 15-17: same-version rerun, same logical-run retry, and extractor v2.
   const laterInput = { ...input, extraction: { ...input.extraction, logicalRunKey: `${input.extraction.logicalRunKey}:later`, executedAt: new Date("2026-09-17T00:00:00.000Z") } };
@@ -134,23 +149,58 @@ integration("Ticket #076 production ingestion PostgreSQL boundary", async () => 
   assert.equal((await service.ingest(stopBoundaryInput)).failed.length, 0);
   assert.deepEqual(await downstreamCounts(), beforeStopBoundary);
 
-  // 26-27: governance G2 is append-only/current while historical G1 remains linked.
+  // 26-30: governance history, material reevaluation, ambiguity, and database source lineage.
   const governanceInput = fixture(equipment.id, variant.id); await registerSource(governanceInput);
   const governanceFirst = (await service.ingest(governanceInput)).succeeded[0]!;
+  assert.deepEqual((await service.ingest(governanceInput)).succeeded[0], governanceFirst);
   const g1 = await db.externalEvidenceSourceGovernanceRevision.findUniqueOrThrow({ where: { id: governanceFirst.reviewReady.historicalSourceGovernanceRevisionId } });
-  const g2 = await db.externalEvidenceSourceGovernanceRevision.create({ data: { sourceId: g1.sourceId, revisionNumber: 2, governanceVersion: "1.0", sourceType: "retailer", publisherIdentity: g1.publisherIdentity, authorityScope: { claimAuthority: "secondary" }, dependencyKnowledge: { state: "claim_level_assessment_required" }, state: "active", reviewerType: "system", reviewerReference: "ticket-076-postgres-governance-fixture", rationale: "Material source classification correction.", effectiveAt: new Date("2026-09-21T00:00:00.000Z"), supersedesRevisionId: g1.id, idempotencyKey: `governance-g2:${g1.id}` } });
+  const g1Snapshot = structuredClone(g1);
+  const beforeGovernanceEvolution = await downstreamCounts();
+  const g2 = await db.externalEvidenceSourceGovernanceRevision.create({ data: { sourceId: g1.sourceId, revisionNumber: 2, governanceVersion: "1.0", sourceType: g1.sourceType, publisherIdentity: g1.publisherIdentity, authorityScope: { claimAuthority: "authoritative", authorizedClaimTypes: [] }, dependencyKnowledge: { state: "claim_level_assessment_required" }, state: "active", reviewerType: "system", reviewerReference: "ticket-076-postgres-governance-fixture", rationale: "Authority scope no longer covers factual specifications.", effectiveAt: new Date("2026-09-21T00:00:00.000Z"), supersedesRevisionId: g1.id, idempotencyKey: `governance-g2:${g1.id}` } });
   const governanceReplay = (await service.ingest(governanceInput)).succeeded[0]!;
+  assert.deepEqual(await db.externalEvidenceSourceGovernanceRevision.findUniqueOrThrow({ where: { id: g1.id } }), g1Snapshot);
   assert.equal(governanceReplay.reviewReady.historicalSourceGovernanceRevisionId, g1.id);
   assert.equal(governanceReplay.reviewReady.currentSourceGovernanceRevisionId, g2.id);
   assert.equal(governanceReplay.reviewReady.sourceGovernanceChanged, true);
   assert.equal(governanceReplay.reviewReady.historicalQualificationState, governanceFirst.reviewReady.historicalQualificationState);
   assert.equal(governanceReplay.reviewReady.qualificationState, "review_required");
+  assert.ok(governanceReplay.reviewReady.blockers.includes("source_governance_authority_scope_changed"));
+  assert.deepEqual(await downstreamCounts(), beforeGovernanceEvolution);
+  assert.equal((await db.externalEvidenceSourceGovernanceRevision.findMany({ where: { sourceId: g1.sourceId }, include: { supersededBy: true } })).filter((row) => row.supersededBy.length === 0).length, 1);
+
+  const g3 = await db.externalEvidenceSourceGovernanceRevision.create({ data: { sourceId: g1.sourceId, revisionNumber: 3, governanceVersion: "1.0", sourceType: g1.sourceType, publisherIdentity: g1.publisherIdentity, authorityScope: { claimAuthority: "authoritative" }, dependencyKnowledge: { state: "unknown" }, state: "active", reviewerType: "system", reviewerReference: "ticket-076-postgres-governance-fixture", rationale: "Dependency knowledge became uncertain.", effectiveAt: new Date("2026-09-22T00:00:00.000Z"), supersedesRevisionId: g2.id, idempotencyKey: `governance-g3:${g1.id}` } });
+  const dependencyReplay = (await service.ingest(governanceInput)).succeeded[0]!;
+  assert.equal(dependencyReplay.reviewReady.currentSourceGovernanceRevisionId, g3.id);
+  assert.equal(dependencyReplay.reviewReady.dependencyState, "unknown_dependency");
+  assert.ok(dependencyReplay.reviewReady.blockers.includes("source_governance_dependency_unresolved"));
+  assert.equal(dependencyReplay.reviewReady.authority.independenceEstablished, false);
+
+  await db.externalEvidenceSourceGovernanceRevision.create({ data: { sourceId: g1.sourceId, revisionNumber: 4, governanceVersion: "1.0", sourceType: g1.sourceType, publisherIdentity: g1.publisherIdentity, authorityScope: { claimAuthority: "authoritative" }, dependencyKnowledge: { state: "claim_level_assessment_required" }, state: "active", reviewerType: "system", reviewerReference: "ticket-076-postgres-governance-fixture", rationale: "First current branch.", effectiveAt: new Date("2026-09-23T00:00:00.000Z"), supersedesRevisionId: g3.id, idempotencyKey: `governance-g4a:${g1.id}` } });
+  await db.externalEvidenceSourceGovernanceRevision.create({ data: { sourceId: g1.sourceId, revisionNumber: 5, governanceVersion: "1.0", sourceType: g1.sourceType, publisherIdentity: g1.publisherIdentity, authorityScope: { claimAuthority: "authoritative" }, dependencyKnowledge: { state: "claim_level_assessment_required" }, state: "active", reviewerType: "system", reviewerReference: "ticket-076-postgres-governance-fixture", rationale: "Second unsuperseded branch.", effectiveAt: new Date("2026-09-23T00:00:01.000Z"), idempotencyKey: `governance-g4b:${g1.id}` } });
+  const ambiguousReplay = (await service.ingest(governanceInput)).succeeded[0]!;
+  assert.equal(ambiguousReplay.reviewReady.qualificationState, "review_required");
+  assert.ok(ambiguousReplay.reviewReady.blockers.includes("source_governance_ambiguous"));
+
+  const sourceB = await db.externalEvidenceSource.create({ data: { stableKey: `source-b-${randomUUID()}`, displayName: "Source B", sourceType: "manufacturer_primary", sourceVersion: "1.0" } });
+  await assert.rejects(() => db.externalEvidenceSourceGovernanceRevision.create({ data: { sourceId: sourceB.id, revisionNumber: 1, governanceVersion: "1.0", sourceType: "manufacturer_primary", authorityScope: { claimAuthority: "authoritative" }, dependencyKnowledge: { state: "claim_level_assessment_required" }, state: "active", reviewerType: "system", reviewerReference: "negative-test", rationale: "Invalid cross-source predecessor.", effectiveAt: new Date(), supersedesRevisionId: g1.id, idempotencyKey: `invalid-cross-source:${g1.id}` } }));
+  const governanceB = await db.externalEvidenceSourceGovernanceRevision.create({ data: { sourceId: sourceB.id, revisionNumber: 1, governanceVersion: "1.0", sourceType: "manufacturer_primary", authorityScope: { claimAuthority: "authoritative" }, dependencyKnowledge: { state: "claim_level_assessment_required" }, state: "active", reviewerType: "system", reviewerReference: "negative-test", rationale: "Valid Source B governance.", effectiveAt: new Date(), idempotencyKey: `source-b-governance:${sourceB.id}` } });
+  const persistedQualification = await db.externalEvidenceQualificationDecision.findUniqueOrThrow({ where: { id: governanceFirst.qualificationDecisionId } });
+  await assert.rejects(() => db.externalEvidenceQualificationDecision.create({ data: {
+    ...persistedQualification,
+    reasons: persistedQualification.reasons as Prisma.InputJsonValue,
+    gaps: persistedQualification.gaps as Prisma.InputJsonValue,
+    blockers: persistedQualification.blockers as Prisma.InputJsonValue,
+    warnings: persistedQualification.warnings as Prisma.InputJsonValue,
+    limitations: persistedQualification.limitations as Prisma.InputJsonValue,
+    proposedEvidenceInput: persistedQualification.proposedEvidenceInput === null ? Prisma.JsonNull : persistedQualification.proposedEvidenceInput as Prisma.InputJsonValue,
+    id: randomUUID(), idempotencyKey: `invalid-qualification-governance:${randomUUID()}`, sourceId: sourceB.id, sourceGovernanceRevisionId: governanceB.id, decidedAt: new Date()
+  } }));
 
   async function registerSource(value: ExternalClaimIngestionInput) {
     await db!.externalEvidenceSource.upsert({ where: { stableKey: value.source.stableKey }, update: {}, create: { id: externalClaimUuid(`source:${value.source.stableKey}`), stableKey: value.source.stableKey, displayName: value.source.displayName, sourceType: value.source.sourceType, publisherIdentity: value.source.publisherIdentity, sourceVersion: value.source.sourceVersion, metadata: { sourceAuthorityResolved: true } } });
   }
   async function lineageCounts() { return { sources: await db!.externalEvidenceSource.count(), governance: await db!.externalEvidenceSourceGovernanceRevision.count(), documents: await db!.externalEvidenceDocument.count(), extractions: await db!.externalEvidenceExtractionRun.count(), identities: await db!.externalEvidenceIdentityAssertion.count(), claims: await db!.externalEvidenceClaim.count(), normalized: await db!.externalEvidenceNormalizedClaim.count(), dependencies: await db!.externalEvidenceDependencyAssessment.count(), constructs: await db!.externalEvidenceConstructRelationship.count(), qualifications: await db!.externalEvidenceQualificationDecision.count(), conflicts: await db!.externalEvidenceConflictCase.count(), conflictMembers: await db!.externalEvidenceConflictMember.count(), reviews: await db!.externalEvidenceReviewDecision.count(), supporting: await db!.externalSupportingRoleDecision.count() }; }
-  async function downstreamCounts() { return { supporting: await db!.externalSupportingRoleDecision.count(), acceptedConstructs: await db!.externalEvidenceConstructRelationship.count({ where: { reviewState: { in: ["reviewed_accepted", "reviewed_with_limitations"] } } }), acceptedDependencyReviews: await db!.externalEvidenceDependencyAssessment.count({ where: { reviewedState: { in: ["reviewed_accepted", "reviewed_with_limitations"] } } }), acceptedReviewDecisions: await db!.externalEvidenceReviewDecision.count({ where: { decision: { in: ["reviewed_accepted", "reviewed_with_limitations"] } } }), canonicalEvaluations: await db!.equipmentDNAAttributeEvaluation.count({ where: { OR: [{ equipmentId: equipment.id }, { equipmentVariantId: { in: [variant.id, otherVariant.id, reverseVariant.id] } }] } }) }; }
+  async function downstreamCounts() { return { supporting: await db!.externalSupportingRoleDecision.count(), acceptedConstructs: await db!.externalEvidenceConstructRelationship.count({ where: { reviewState: { in: ["reviewed_accepted", "reviewed_with_limitations"] } } }), acceptedDependencyReviews: await db!.externalEvidenceDependencyAssessment.count({ where: { reviewedState: { in: ["reviewed_accepted", "reviewed_with_limitations"] } } }), acceptedReviewDecisions: await db!.externalEvidenceReviewDecision.count({ where: { decision: { in: ["reviewed_accepted", "reviewed_with_limitations"] } } }), canonicalEvaluations: await db!.equipmentDNAAttributeEvaluation.count({ where: { OR: [{ equipmentId: equipment.id }, { equipmentVariantId: { in: [variant.id, otherVariant.id, reverseVariant.id, forwardVariant.id] } }] } }) }; }
 });
 
 function withClaim(input: ExternalClaimIngestionInput, changes: Partial<ExternalClaimIngestionInput["claims"][number]>): ExternalClaimIngestionInput { return { ...input, claims: [{ ...input.claims[0]!, ...changes }] }; }

@@ -874,11 +874,12 @@ model ExternalEvidenceSourceGovernanceRevision {
   createdAt            DateTime                     @default(now())
 
   source                 ExternalEvidenceSource                     @relation(fields: [sourceId], references: [id], onDelete: Restrict)
-  supersedesRevision     ExternalEvidenceSourceGovernanceRevision?  @relation("ExternalSourceGovernanceSupersession", fields: [supersedesRevisionId], references: [id], onDelete: Restrict)
+  supersedesRevision     ExternalEvidenceSourceGovernanceRevision?  @relation("ExternalSourceGovernanceSupersession", fields: [supersedesRevisionId, sourceId], references: [id, sourceId], onDelete: Restrict)
   supersededBy           ExternalEvidenceSourceGovernanceRevision[] @relation("ExternalSourceGovernanceSupersession")
   qualificationDecisions ExternalEvidenceQualificationDecision[]
 
   @@unique([sourceId, revisionNumber])
+  @@unique([id, sourceId])
   @@index([sourceId, effectiveAt])
   @@index([sourceType, state])
   @@map("external_evidence_source_governance_revisions")
@@ -1096,6 +1097,7 @@ model ExternalEvidenceQualificationDecision {
   normalizedClaimId          String                             @db.Uuid
   constructRelationshipId    String                             @db.Uuid
   sourceGovernanceRevisionId String?                            @db.Uuid
+  sourceId                   String?                            @db.Uuid
   contractVersion            String
   state                      ExternalEvidenceQualificationState
   proposedEvidenceClass      String?
@@ -1112,7 +1114,7 @@ model ExternalEvidenceQualificationDecision {
 
   normalizedClaim          ExternalEvidenceNormalizedClaim           @relation(fields: [normalizedClaimId], references: [id], onDelete: Restrict)
   constructRelationship    ExternalEvidenceConstructRelationship     @relation(fields: [constructRelationshipId, normalizedClaimId], references: [id, normalizedClaimId], onDelete: Restrict)
-  sourceGovernanceRevision ExternalEvidenceSourceGovernanceRevision? @relation(fields: [sourceGovernanceRevisionId], references: [id], onDelete: Restrict)
+  sourceGovernanceRevision ExternalEvidenceSourceGovernanceRevision? @relation(fields: [sourceGovernanceRevisionId, sourceId], references: [id, sourceId], onDelete: Restrict)
   supportingDecisions      ExternalSupportingRoleDecision[]
 
   @@unique([id, normalizedClaimId, constructRelationshipId])
@@ -1120,6 +1122,7 @@ model ExternalEvidenceQualificationDecision {
   @@index([constructRelationshipId])
   @@index([contractVersion, state])
   @@index([sourceGovernanceRevisionId])
+  @@index([sourceId])
   @@map("external_evidence_qualification_decisions")
 }
 

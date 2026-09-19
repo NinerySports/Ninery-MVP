@@ -95,3 +95,13 @@ The operational claim slot is a durable hash of stable source identity, source r
 Initial writes and exact replay both return the durable projection reconstructed from persisted lineage. That projection retains source classification and publisher, document ID/revision/locator, raw wording and source location, extraction logical run/provider/model/version/time, normalized value/unit/method/version/vocabulary/evidence-class proposal, identity applicability, dependency and syndication state, construct mapping/version/confidence, immutable historical qualification, operational conflict/supersession state, exact quarantine reasons, blockers, and the specific next human decision.
 
 The clean Atlas USSSA inputs are controlled, bounded real-source capture fixtures. They are not live acquisition, independent proof of capture, or evidence authority. Production services perform all ingestion, and the contaminated Atlas USA equipment and variant IDs remain hard blocked.
+
+## Operational governance policy
+
+Operational source-governance reevaluation uses policy version `1.0`. Source classification bounds the maximum authority available to a claim. `authorityScope.claimAuthority` may narrow that authority, and an optional `authorizedClaimTypes` list limits it by claim category. Missing, malformed, or newly restrictive authority fails closed. `dependencyKnowledge.state` is neutral only when it is `claim_level_assessment_required`; unknown, dependent, ambiguous, or independence-claiming source metadata requires dependency review and never establishes independence. Only the `active` governance state permits authority; unknown states fail closed.
+
+Governance revisions do not rewrite historical qualifications. Durable projection reports the historical revision and qualification separately from the single current governance leaf and its operational qualification. Multiple current leaves are ambiguous and require review. Governance evolution creates no evidence, independent source, corroboration, or supporting-role approval.
+
+Same-source lineage is enforced in both repository and PostgreSQL boundaries. Composite foreign keys reject cross-source predecessors and governance/source pairs. An insertion trigger also verifies that the qualification source matches the normalized claim's document source. Legacy pre-Ticket #076 qualification rows may retain both new source fields as null.
+
+The three-attempt concurrency policy retries only Prisma `P2002` and `P2034`. Optional observation events exist solely to test attempt bounds and durable rereads; they do not alter production decisions.
