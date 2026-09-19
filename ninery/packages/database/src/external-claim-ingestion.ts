@@ -182,7 +182,9 @@ function buildPersistenceUnit(input: ExternalClaimIngestionInput, claim: Externa
   const dependency = governedDependency(claim, ai);
   const identity = governedIdentity(trusted.identity, input.targetIdentity);
   const claimLimitations = [...new Set(claim.limitations ?? [])].sort();
-  const rawLimitations = [...new Set([...claimLimitations, ...trusted.blockers])].sort();
+  const governanceAmbiguous = trusted.blockers.includes("source_governance_ambiguous");
+  const durableTrustedBlockers = trusted.blockers.filter((blocker) => !blocker.startsWith("source_governance_") && !(governanceAmbiguous && blocker === "source_authority_unresolved"));
+  const rawLimitations = [...new Set([...claimLimitations, ...durableTrustedBlockers])].sort();
   const contentFingerprint = hash(input.document.boundedContent);
   const sourceId = uuid(`source:${trusted.source.stableKey}`);
   const documentRevision = revision(input.document.revisionLabel, contentFingerprint);

@@ -131,6 +131,10 @@ test("Ticket #076 migration enforces same-source governance at the PostgreSQL bo
   assert.ok(sql.includes('FOREIGN KEY ("sourceGovernanceRevisionId", "sourceId")'));
   assert.ok(sql.includes("enforce_external_qualification_source_lineage"));
   assert.ok(sql.includes("qualification governance source does not match claim source"));
+  assert.ok(sql.includes("external_evidence_legacy_qualification_exemptions"));
+  assert.ok(sql.includes("legacy qualification exemptions are a sealed migration-time snapshot"));
+  assert.ok(sql.includes("new qualifications require source-governance lineage"));
+  assert.ok(sql.indexOf('INSERT INTO "external_evidence_legacy_qualification_exemptions"') < sql.indexOf('CREATE TRIGGER "external_legacy_qualification_exemptions_sealed"'));
   assert.equal(/\bDROP\s+(TABLE|COLUMN)\b/i.test(sql), false);
 });
 

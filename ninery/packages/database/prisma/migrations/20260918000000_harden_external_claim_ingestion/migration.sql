@@ -26,6 +26,20 @@ ALTER TABLE "external_evidence_qualification_decisions" ADD COLUMN "sourceId" UU
 ALTER TABLE "external_evidence_qualification_decisions" ADD COLUMN "semanticFingerprint" TEXT;
 ALTER TABLE "external_evidence_qualification_decisions" ADD COLUMN "proposedEvidenceInput" JSONB;
 
+-- Snapshot only qualifications that predate Ticket #076 governance lineage. This
+-- immutable ledger is sealed below, so future inserts cannot claim legacy status.
+CREATE TABLE "external_evidence_legacy_qualification_exemptions" (
+    "qualificationId" UUID NOT NULL,
+    "reason" TEXT NOT NULL,
+    "capturedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "external_evidence_legacy_qualification_exemptions_pkey" PRIMARY KEY ("qualificationId")
+);
+
+INSERT INTO "external_evidence_legacy_qualification_exemptions" ("qualificationId", "reason")
+SELECT "id", 'Qualification existed before Ticket #076 source-governance lineage.'
+FROM "external_evidence_qualification_decisions"
+WHERE "sourceGovernanceRevisionId" IS NULL AND "sourceId" IS NULL;
+
 CREATE UNIQUE INDEX "external_evidence_source_governance_revisions_sourceId_revisionNumber_key" ON "external_evidence_source_governance_revisions"("sourceId", "revisionNumber");
 CREATE UNIQUE INDEX "external_evidence_source_governance_revisions_id_sourceId_key" ON "external_evidence_source_governance_revisions"("id", "sourceId");
 CREATE UNIQUE INDEX "external_evidence_source_governance_revisions_supersedesRevisionId_key" ON "external_evidence_source_governance_revisions"("supersedesRevisionId");
@@ -39,13 +53,28 @@ CREATE INDEX "external_evidence_qualification_decisions_sourceId_idx" ON "extern
 ALTER TABLE "external_evidence_source_governance_revisions" ADD CONSTRAINT "external_evidence_source_governance_revisions_sourceId_fkey" FOREIGN KEY ("sourceId") REFERENCES "external_evidence_sources"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "external_evidence_source_governance_revisions" ADD CONSTRAINT "external_evidence_source_governance_revisions_supersedesRevisionId_sourceId_fkey" FOREIGN KEY ("supersedesRevisionId", "sourceId") REFERENCES "external_evidence_source_governance_revisions"("id", "sourceId") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "external_evidence_qualification_decisions" ADD CONSTRAINT "external_evidence_qualification_decisions_sourceGovernanceRevisionId_sourceId_fkey" FOREIGN KEY ("sourceGovernanceRevisionId", "sourceId") REFERENCES "external_evidence_source_governance_revisions"("id", "sourceId") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "external_evidence_legacy_qualification_exemptions" ADD CONSTRAINT "external_evidence_legacy_qualification_exemptions_qualificationId_fkey" FOREIGN KEY ("qualificationId") REFERENCES "external_evidence_qualification_decisions"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+CREATE FUNCTION reject_external_legacy_qualification_exemption_mutation() RETURNS trigger AS $$
+BEGIN
+    RAISE EXCEPTION 'legacy qualification exemptions are a sealed migration-time snapshot';
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER "external_legacy_qualification_exemptions_sealed" BEFORE INSERT OR UPDATE OR DELETE ON "external_evidence_legacy_qualification_exemptions" FOR EACH ROW EXECUTE FUNCTION reject_external_legacy_qualification_exemption_mutation();
 
 CREATE FUNCTION enforce_external_qualification_source_lineage() RETURNS trigger AS $$
 DECLARE
     claim_source_id UUID;
 BEGIN
     IF NEW."sourceGovernanceRevisionId" IS NULL AND NEW."sourceId" IS NULL THEN
-        RETURN NEW;
+        IF EXISTS (
+            SELECT 1 FROM "external_evidence_legacy_qualification_exemptions" legacy
+            WHERE legacy."qualificationId" = NEW."id"
+        ) THEN
+            RETURN NEW;
+        END IF;
+        RAISE EXCEPTION 'new qualifications require source-governance lineage';
     END IF;
     IF NEW."sourceGovernanceRevisionId" IS NULL OR NEW."sourceId" IS NULL THEN
         RAISE EXCEPTION 'qualification governance revision and source must be provided together';

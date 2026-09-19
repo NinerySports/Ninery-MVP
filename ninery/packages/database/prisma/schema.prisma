@@ -1112,10 +1112,11 @@ model ExternalEvidenceQualificationDecision {
   semanticFingerprint        String?
   decidedAt                  DateTime                           @default(now())
 
-  normalizedClaim          ExternalEvidenceNormalizedClaim           @relation(fields: [normalizedClaimId], references: [id], onDelete: Restrict)
-  constructRelationship    ExternalEvidenceConstructRelationship     @relation(fields: [constructRelationshipId, normalizedClaimId], references: [id, normalizedClaimId], onDelete: Restrict)
-  sourceGovernanceRevision ExternalEvidenceSourceGovernanceRevision? @relation(fields: [sourceGovernanceRevisionId, sourceId], references: [id, sourceId], onDelete: Restrict)
+  normalizedClaim          ExternalEvidenceNormalizedClaim               @relation(fields: [normalizedClaimId], references: [id], onDelete: Restrict)
+  constructRelationship    ExternalEvidenceConstructRelationship         @relation(fields: [constructRelationshipId, normalizedClaimId], references: [id, normalizedClaimId], onDelete: Restrict)
+  sourceGovernanceRevision ExternalEvidenceSourceGovernanceRevision?     @relation(fields: [sourceGovernanceRevisionId, sourceId], references: [id, sourceId], onDelete: Restrict)
   supportingDecisions      ExternalSupportingRoleDecision[]
+  legacyLineageExemption   ExternalEvidenceLegacyQualificationExemption?
 
   @@unique([id, normalizedClaimId, constructRelationshipId])
   @@index([normalizedClaimId, decidedAt])
@@ -1124,6 +1125,16 @@ model ExternalEvidenceQualificationDecision {
   @@index([sourceGovernanceRevisionId])
   @@index([sourceId])
   @@map("external_evidence_qualification_decisions")
+}
+
+model ExternalEvidenceLegacyQualificationExemption {
+  qualificationId String   @id @db.Uuid
+  reason          String
+  capturedAt      DateTime @default(now())
+
+  qualification ExternalEvidenceQualificationDecision @relation(fields: [qualificationId], references: [id], onDelete: Restrict)
+
+  @@map("external_evidence_legacy_qualification_exemptions")
 }
 
 model ExternalEvidenceReviewDecision {

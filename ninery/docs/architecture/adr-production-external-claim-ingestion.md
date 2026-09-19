@@ -102,6 +102,8 @@ Operational source-governance reevaluation uses policy version `1.0`. Source cla
 
 Governance revisions do not rewrite historical qualifications. Durable projection reports the historical revision and qualification separately from the single current governance leaf and its operational qualification. Multiple current leaves are ambiguous and require review. Governance evolution creates no evidence, independent source, corroboration, or supporting-role approval.
 
-Same-source lineage is enforced in both repository and PostgreSQL boundaries. Composite foreign keys reject cross-source predecessors and governance/source pairs. An insertion trigger also verifies that the qualification source matches the normalized claim's document source. Legacy pre-Ticket #076 qualification rows may retain both new source fields as null.
+Same-source lineage is enforced in both repository and PostgreSQL boundaries. Composite foreign keys reject cross-source predecessors and governance/source pairs. An insertion trigger also verifies that the qualification source matches the normalized claim's document source.
+
+Legacy pre-Ticket #076 qualification compatibility is bounded by an immutable migration-time exemption ledger. The migration snapshots only qualification IDs already present before the new governance columns are used, then seals the ledger against every insert, update, and delete. A null-lineage qualification is accepted only when its ID is in that snapshot. Every qualification inserted after the migration must therefore provide both source and governance revision, and both must match its normalized claim's document source.
 
 The three-attempt concurrency policy retries only Prisma `P2002` and `P2034`. Optional observation events exist solely to test attempt bounds and durable rereads; they do not alter production decisions.
