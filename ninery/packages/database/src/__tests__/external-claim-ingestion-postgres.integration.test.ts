@@ -220,15 +220,22 @@ integration("Ticket #076 production ingestion PostgreSQL boundary", async () => 
   const migrationConnection = new PrismaClient({ datasources: { db: { url: url! } } });
   const concurrentWriter = new PrismaClient({ datasources: { db: { url: url! } } });
   try {
-    await migrationConnection.$executeRawUnsafe("BEGIN");
-    await migrationConnection.$executeRawUnsafe('LOCK TABLE "external_evidence_qualification_decisions" IN ACCESS EXCLUSIVE MODE');
-    await concurrentWriter.$executeRawUnsafe("SET lock_timeout = '250ms'");
-    await assert.rejects(
-      () => concurrentWriter.externalEvidenceQualificationDecision.create({ data: copyQualification({ sourceId: g1.sourceId, sourceGovernanceRevisionId: g1.id }) }),
-      /lock timeout|canceling statement due to lock timeout/i
-    );
+    await migrationConnection.$transaction(async (lockHolder) => {
+      const [lockHolderSession] = await lockHolder.$queryRaw<Array<{ pid: number }>>`SELECT pg_backend_pid()::int AS pid`;
+      await lockHolder.$executeRawUnsafe('LOCK TABLE "external_evidence_qualification_decisions" IN ACCESS EXCLUSIVE MODE');
+      await assert.rejects(
+        () => concurrentWriter.$transaction(async (writer) => {
+          const [writerSession] = await writer.$queryRaw<Array<{ pid: number }>>`SELECT pg_backend_pid()::int AS pid`;
+          assert.ok(lockHolderSession);
+          assert.ok(writerSession);
+          assert.notEqual(writerSession.pid, lockHolderSession.pid);
+          await writer.$executeRawUnsafe("SET LOCAL lock_timeout = '250ms'");
+          return writer.externalEvidenceQualificationDecision.create({ data: copyQualification({ sourceId: g1.sourceId, sourceGovernanceRevisionId: g1.id }) });
+        }, { maxWait: 2_000, timeout: 2_000 }),
+        /55P03|lock timeout|canceling statement due to lock timeout/i
+      );
+    }, { maxWait: 2_000, timeout: 5_000 });
   } finally {
-    await migrationConnection.$executeRawUnsafe("ROLLBACK").catch(() => undefined);
     await Promise.all([migrationConnection.$disconnect(), concurrentWriter.$disconnect()]);
   }
   const governedAfterLockRelease = await db.externalEvidenceQualificationDecision.create({ data: copyQualification({ sourceId: g1.sourceId, sourceGovernanceRevisionId: g1.id }) });

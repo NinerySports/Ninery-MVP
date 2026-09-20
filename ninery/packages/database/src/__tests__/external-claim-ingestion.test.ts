@@ -127,7 +127,6 @@ test("governance policy is versioned and fails closed for authority, dependency,
 
 test("Ticket #076 migration enforces same-source governance at the PostgreSQL boundary", () => {
   const sql = readFileSync("prisma/migrations/20260918000000_harden_external_claim_ingestion/migration.sql", "utf8");
-  assert.match(sql, /^BEGIN;/m);
   assert.ok(sql.includes('LOCK TABLE "external_evidence_qualification_decisions" IN ACCESS EXCLUSIVE MODE;'));
   assert.ok(sql.includes('FOREIGN KEY ("supersedesRevisionId", "sourceId")'));
   assert.ok(sql.includes('FOREIGN KEY ("sourceGovernanceRevisionId", "sourceId")'));
@@ -136,11 +135,14 @@ test("Ticket #076 migration enforces same-source governance at the PostgreSQL bo
   assert.ok(sql.includes("external_evidence_legacy_qualification_exemptions"));
   assert.ok(sql.includes("legacy qualification exemptions are a sealed migration-time snapshot"));
   assert.ok(sql.includes("new qualifications require source-governance lineage"));
+  const begin = sql.indexOf("BEGIN;");
   const lock = sql.indexOf('LOCK TABLE "external_evidence_qualification_decisions" IN ACCESS EXCLUSIVE MODE;');
   const snapshot = sql.indexOf('INSERT INTO "external_evidence_legacy_qualification_exemptions"');
   const seal = sql.indexOf('CREATE TRIGGER "external_legacy_qualification_exemptions_sealed"');
   const enforcement = sql.indexOf('CREATE TRIGGER "external_qualification_source_lineage"');
   const commit = sql.lastIndexOf("COMMIT;");
+  assert.ok(begin >= 0);
+  assert.ok(begin < lock);
   assert.ok(lock < snapshot);
   assert.ok(snapshot < seal);
   assert.ok(seal < enforcement);
