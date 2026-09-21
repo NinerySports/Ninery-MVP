@@ -104,13 +104,17 @@ export class PrismaExternalClaimIngestionRepository implements ExternalClaimInge
     if (mismatchedStage) throw new ExternalClaimIngestionError("SEMANTIC_FINGERPRINT_MISMATCH", "Persisted stage semantics do not match their deterministic identities.");
     const persistedFingerprint = ingestionFingerprint(raw.document.sourceId, raw.documentId, raw.extractionRunId, raw.identityAssertionId, raw.id, normalized.id, dependency.id, row.constructRelationshipId, row.id);
     if (persistedFingerprint !== semanticFingerprint) throw new ExternalClaimIngestionError("SEMANTIC_FINGERPRINT_MISMATCH", "The persisted lineage does not match the requested semantic fingerprint.");
+    const proposedTarget = reconstructProposedTarget(row.proposedTargetLevel, {
+      equipmentId: raw.identityAssertion.equipmentId,
+      equipmentVariantId: raw.identityAssertion.equipmentVariantId
+    });
     const historicalQualification = {
       contractVersion: "1.0" as const,
       normalizedClaimId: normalized.id,
       rawClaimId: raw.id,
       state: String(row.state) as ExternalClaimIngestionRecord["qualification"]["state"],
       proposedEvidenceClass: row.proposedEvidenceClass as ExternalClaimIngestionRecord["qualification"]["proposedEvidenceClass"],
-      proposedTarget: row.proposedTargetLevel ? { level: row.proposedTargetLevel as "equipment" | "variant", equipmentId: raw.identityAssertion.equipmentId ?? undefined, equipmentVariantId: raw.identityAssertion.equipmentVariantId ?? undefined } : undefined,
+      proposedTarget,
       identity: { certainty: String(raw.identityAssertion.certainty) as ExternalClaimIngestionRecord["qualification"]["identity"]["certainty"], applicable: !["ambiguous", "conflicting", "unresolved"].includes(String(raw.identityAssertion.certainty)) },
       authority: raw.authority as ExternalClaimIngestionRecord["qualification"]["authority"],
       verification: String(normalized.verificationState) as ExternalClaimIngestionRecord["qualification"]["verification"],
@@ -396,6 +400,21 @@ function parseEvidenceClass(value: string): ExternalClaimIngestionRecord["review
     default:
       throw new ExternalClaimIngestionError("PERSISTED_LINEAGE_INCOMPLETE", `Unsupported persisted evidence-class proposal: ${value}`);
   }
+}
+function reconstructProposedTarget(
+  level: string | null,
+  identity: { equipmentId: string | null; equipmentVariantId: string | null }
+): ExternalClaimIngestionRecord["qualification"]["proposedTarget"] {
+  if (level === null) return undefined;
+  if (level === "variant") {
+    if (!identity.equipmentVariantId) throw new ExternalClaimIngestionError("PERSISTED_LINEAGE_INCOMPLETE", "Variant qualification target lacks its equipment-variant identity.");
+    return { level: "variant", equipmentVariantId: identity.equipmentVariantId };
+  }
+  if (level === "equipment") {
+    if (!identity.equipmentId) throw new ExternalClaimIngestionError("PERSISTED_LINEAGE_INCOMPLETE", "Equipment qualification target lacks its equipment identity.");
+    return { level: "equipment", equipmentId: identity.equipmentId };
+  }
+  throw new ExternalClaimIngestionError("PERSISTED_LINEAGE_INCOMPLETE", `Unsupported persisted qualification target level: ${level}`);
 }
 function stableJson(value: unknown): string { if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`; if (value && typeof value === "object") return `{${Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`).join(",")}}`; return JSON.stringify(value); }
 function deterministicUuid(seed: string) { const hex = createHash("sha256").update(seed).digest("hex"); return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`; }

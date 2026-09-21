@@ -24,6 +24,7 @@ integration("Ticket #076 production ingestion PostgreSQL boundary", async () => 
   const first = await service.ingest(input); const replay = await service.ingest(input);
   assert.equal(first.failed.length, 0); assert.deepEqual(replay, first);
   assert.equal(await db.externalEvidenceQualificationDecision.count({ where: { idempotencyKey: first.succeeded[0]!.idempotencyKey } }), 1);
+  assert.deepEqual(first.succeeded[0]!.qualification.proposedTarget, { level: "variant", equipmentVariantId: variant.id });
 
   // 3-5: same-version value/unit changes and cross-variant isolation.
   const changedValue = await service.ingest(withClaim(input, { normalization: { ...input.claims[0]!.normalization, value: 31 } }));
@@ -35,11 +36,27 @@ integration("Ticket #076 production ingestion PostgreSQL boundary", async () => 
   assert.equal(crossVariantResult.succeeded[0]!.reviewReady.equipmentVariantId, otherVariant.id);
   assert.notEqual(crossVariantResult.succeeded[0]!.identityAssertionId, first.succeeded[0]!.identityAssertionId);
 
+  const equipmentLevelBase = fixture(equipment.id, variant.id);
+  const equipmentLevelIdentity = { ...equipmentLevelBase.targetIdentity, certainty: "equipment_model_match" as const, equipmentVariantId: undefined };
+  const equipmentLevelInput: ExternalClaimIngestionInput = {
+    ...equipmentLevelBase,
+    targetIdentity: equipmentLevelIdentity,
+    claims: [{ ...equipmentLevelBase.claims[0]!, identity: equipmentLevelIdentity }]
+  };
+  await registerSource(equipmentLevelInput);
+  const equipmentLevelRecord = (await service.ingest(equipmentLevelInput)).succeeded[0]!;
+  assert.deepEqual(equipmentLevelRecord.qualification.proposedTarget, { level: "equipment", equipmentId: equipment.id });
+
   // 6: the relational trigger prevents mutation before repository verification;
   // qualification fingerprint behavior is tested without weakening that trigger.
   await assert.rejects(() => db.externalEvidenceQualificationDecision.update({ where: { id: first.succeeded[0]!.qualificationDecisionId }, data: { state: "not_eligible" } }));
   const persistedQualificationRow = await db.externalEvidenceQualificationDecision.findUniqueOrThrow({ where: { id: first.succeeded[0]!.qualificationDecisionId } });
   const validFingerprint = persistedQualificationRow.semanticFingerprint;
+  const reconstructedVariantFingerprint = qualificationFingerprint({ qualification: first.succeeded[0]!.qualification, normalizedClaimId: first.succeeded[0]!.normalizedClaimId, rawClaimId: first.succeeded[0]!.rawClaimId, identityAssertionId: first.succeeded[0]!.identityAssertionId, dependencyAssessmentId: first.succeeded[0]!.dependencyAssessmentId, constructRelationshipId: first.succeeded[0]!.constructRelationshipId, sourceGovernanceRevisionId: first.succeeded[0]!.reviewReady.historicalSourceGovernanceRevisionId, authority: first.succeeded[0]!.qualification.authority! });
+  assert.equal(reconstructedVariantFingerprint, validFingerprint);
+  const persistedEquipmentQualificationRow = await db.externalEvidenceQualificationDecision.findUniqueOrThrow({ where: { id: equipmentLevelRecord.qualificationDecisionId } });
+  const reconstructedEquipmentFingerprint = qualificationFingerprint({ qualification: equipmentLevelRecord.qualification, normalizedClaimId: equipmentLevelRecord.normalizedClaimId, rawClaimId: equipmentLevelRecord.rawClaimId, identityAssertionId: equipmentLevelRecord.identityAssertionId, dependencyAssessmentId: equipmentLevelRecord.dependencyAssessmentId, constructRelationshipId: equipmentLevelRecord.constructRelationshipId, sourceGovernanceRevisionId: equipmentLevelRecord.reviewReady.historicalSourceGovernanceRevisionId, authority: equipmentLevelRecord.qualification.authority! });
+  assert.equal(reconstructedEquipmentFingerprint, persistedEquipmentQualificationRow.semanticFingerprint);
   const alteredFingerprint = qualificationFingerprint({ qualification: { ...first.succeeded[0]!.qualification, state: "not_eligible" }, normalizedClaimId: first.succeeded[0]!.normalizedClaimId, rawClaimId: first.succeeded[0]!.rawClaimId, identityAssertionId: first.succeeded[0]!.identityAssertionId, dependencyAssessmentId: first.succeeded[0]!.dependencyAssessmentId, constructRelationshipId: first.succeeded[0]!.constructRelationshipId, sourceGovernanceRevisionId: first.succeeded[0]!.reviewReady.historicalSourceGovernanceRevisionId, authority: first.succeeded[0]!.qualification.authority! });
   assert.notEqual(alteredFingerprint, validFingerprint);
 
