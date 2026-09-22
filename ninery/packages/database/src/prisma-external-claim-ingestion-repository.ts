@@ -113,7 +113,7 @@ export class PrismaExternalClaimIngestionRepository implements ExternalClaimInge
       normalizedClaimId: normalized.id,
       rawClaimId: raw.id,
       state: String(row.state) as ExternalClaimIngestionRecord["qualification"]["state"],
-      proposedEvidenceClass: row.proposedEvidenceClass as ExternalClaimIngestionRecord["qualification"]["proposedEvidenceClass"],
+      proposedEvidenceClass: parseProposedEvidenceClass(row.proposedEvidenceClass),
       proposedTarget,
       identity: { certainty: String(raw.identityAssertion.certainty) as ExternalClaimIngestionRecord["qualification"]["identity"]["certainty"], applicable: !["ambiguous", "conflicting", "unresolved"].includes(String(raw.identityAssertion.certainty)) },
       authority: raw.authority as ExternalClaimIngestionRecord["qualification"]["authority"],
@@ -399,6 +399,20 @@ function parseEvidenceClass(value: string): ExternalClaimIngestionRecord["review
       return value;
     default:
       throw new ExternalClaimIngestionError("PERSISTED_LINEAGE_INCOMPLETE", `Unsupported persisted evidence-class proposal: ${value}`);
+  }
+}
+function parseProposedEvidenceClass(value: string | null): ExternalClaimIngestionRecord["qualification"]["proposedEvidenceClass"] {
+  if (value === null) return undefined;
+  switch (value) {
+    case "verified_catalog_fact":
+    case "direct_physical_measurement":
+    case "controlled_mechanical_test":
+    case "structured_human_evaluation":
+    case "structured_field_observation":
+    case "modeled_estimate":
+      return value;
+    default:
+      throw new ExternalClaimIngestionError("PERSISTED_LINEAGE_INCOMPLETE", `Unsupported persisted qualification evidence class: ${value}`);
   }
 }
 function reconstructProposedTarget(

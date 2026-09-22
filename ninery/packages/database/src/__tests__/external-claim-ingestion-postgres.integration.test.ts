@@ -25,6 +25,7 @@ integration("Ticket #076 production ingestion PostgreSQL boundary", async () => 
   assert.equal(first.failed.length, 0); assert.deepEqual(replay, first);
   assert.equal(await db.externalEvidenceQualificationDecision.count({ where: { idempotencyKey: first.succeeded[0]!.idempotencyKey } }), 1);
   assert.deepEqual(first.succeeded[0]!.qualification.proposedTarget, { level: "variant", equipmentVariantId: variant.id });
+  const originalQualificationFingerprint = (await db.externalEvidenceQualificationDecision.findUniqueOrThrow({ where: { id: first.succeeded[0]!.qualificationDecisionId } })).semanticFingerprint;
 
   // 3-5: same-version value/unit changes and cross-variant isolation.
   const changedValue = await service.ingest(withClaim(input, { normalization: { ...input.claims[0]!.normalization, value: 31 } }));
@@ -103,10 +104,14 @@ integration("Ticket #076 production ingestion PostgreSQL boundary", async () => 
 
   // 12-14: conflicts affect both members, replay, and reverse insertion order.
   assert.equal(changedValue.succeeded[0]!.qualification.state, "review_required");
-  const earlierAfterConflict = await service.ingest(input);
-  assert.equal(earlierAfterConflict.succeeded[0]!.reviewReady.historicalQualificationState, "qualified");
-  assert.equal(earlierAfterConflict.succeeded[0]!.reviewReady.qualificationState, "review_required");
-  assert.deepEqual(await service.ingest(input), earlierAfterConflict);
+  const earlierAfterConflictResult = await service.ingest(input);
+  assert.equal(earlierAfterConflictResult.failed.length, 0);
+  assert.equal(earlierAfterConflictResult.succeeded.length, 1);
+  const earlierAfterConflict = earlierAfterConflictResult.succeeded[0]!;
+  assert.equal(earlierAfterConflict.reviewReady.historicalQualificationState, "qualified");
+  assert.equal(earlierAfterConflict.reviewReady.qualificationState, "review_required");
+  assert.equal((await db.externalEvidenceQualificationDecision.findUniqueOrThrow({ where: { id: first.succeeded[0]!.qualificationDecisionId } })).semanticFingerprint, originalQualificationFingerprint);
+  assert.deepEqual(await service.ingest(input), earlierAfterConflictResult);
   const forward = fixture(equipment.id, forwardVariant.id); await registerSource(forward);
   const forwardBInput = withClaim({ ...forward, extraction: { ...forward.extraction, logicalRunKey: `${forward.extraction.logicalRunKey}:second`, executedAt: new Date("2026-09-17T00:00:00.000Z") } }, { normalization: { ...forward.claims[0]!.normalization, value: 31 } });
   const forwardAResult = (await service.ingest(forward)).succeeded[0]!;
