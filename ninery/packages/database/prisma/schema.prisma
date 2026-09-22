@@ -1023,7 +1023,6 @@ model ExternalEvidenceNormalizedClaim {
   supportingDecisions    ExternalSupportingRoleDecision[]
   conflictMemberships    ExternalEvidenceConflictMember[]
 
-  @@unique([rawClaimId, claimKey, normalizationVersion])
   @@unique([id, rawClaimId])
   @@index([claimKey])
   @@index([verificationState, reviewState])

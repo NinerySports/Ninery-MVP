@@ -29,8 +29,19 @@ integration("Ticket #076 production ingestion PostgreSQL boundary", async () => 
   // 3-5: same-version value/unit changes and cross-variant isolation.
   const changedValue = await service.ingest(withClaim(input, { normalization: { ...input.claims[0]!.normalization, value: 31 } }));
   const changedUnit = await service.ingest(withClaim(input, { normalization: { ...input.claims[0]!.normalization, unit: "cm" } }));
+  assert.equal(changedValue.failed.length, 0);
+  assert.equal(changedValue.succeeded.length, 1);
+  assert.equal(changedUnit.failed.length, 0);
+  assert.equal(changedUnit.succeeded.length, 1);
   assert.notEqual(changedValue.succeeded[0]!.normalizedClaimId, first.succeeded[0]!.normalizedClaimId);
   assert.notEqual(changedUnit.succeeded[0]!.normalizedClaimId, first.succeeded[0]!.normalizedClaimId);
+  assert.equal(changedValue.succeeded[0]!.rawClaimId, first.succeeded[0]!.rawClaimId);
+  assert.equal(changedUnit.succeeded[0]!.rawClaimId, first.succeeded[0]!.rawClaimId);
+  assert.equal(await db.externalEvidenceNormalizedClaim.count({ where: { id: { in: [first.succeeded[0]!.normalizedClaimId, changedValue.succeeded[0]!.normalizedClaimId, changedUnit.succeeded[0]!.normalizedClaimId] } } }), 3);
+  assert.equal(changedValue.succeeded[0]!.reviewReady.qualificationState, "review_required");
+  assert.equal(changedUnit.succeeded[0]!.reviewReady.qualificationState, "review_required");
+  assert.ok(changedValue.succeeded[0]!.reviewReady.unresolvedConflictIds.length > 0);
+  assert.ok(changedUnit.succeeded[0]!.reviewReady.unresolvedConflictIds.length > 0);
   const crossVariant = fixture(equipment.id, otherVariant.id, { sourceStableKey: input.source.stableKey, sourceReference: input.document.sourceReference }); await registerSource(crossVariant);
   const crossVariantResult = await service.ingest(crossVariant);
   assert.equal(crossVariantResult.succeeded[0]!.reviewReady.equipmentVariantId, otherVariant.id);
