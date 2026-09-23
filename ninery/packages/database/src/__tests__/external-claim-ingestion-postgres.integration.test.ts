@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
-import { Prisma, PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient, type ExternalEvidenceClaim } from "@prisma/client";
 import { CONTAMINATED_ATLAS_EQUIPMENT_ID, CONTAMINATED_ATLAS_VARIANT_ID, externalClaimUuid, GovernedExternalClaimIngestionService, qualificationFingerprint, type ExternalClaimIngestionInput } from "../external-claim-ingestion.js";
 import { PrismaExternalClaimIngestionRepository } from "../prisma-external-claim-ingestion-repository.js";
 
@@ -9,6 +9,7 @@ const url = process.env.TEST_DATABASE_URL;
 const integration = url ? test : test.skip;
 const db = url ? new PrismaClient({ datasources: { db: { url } } }) : undefined;
 type ConflictWithMembers = Prisma.ExternalEvidenceConflictCaseGetPayload<{ include: { members: { include: { normalizedClaim: true } }; resolutions: true } }>;
+type ClaimWithSuperseders = Prisma.ExternalEvidenceClaimGetPayload<{ include: { supersededBy: true } }>;
 
 integration("Ticket #076 production ingestion PostgreSQL boundary", async () => {
   assert.ok(db);
@@ -83,9 +84,19 @@ integration("Ticket #076 production ingestion PostgreSQL boundary", async () => 
   assert.ok(untrustedResult.succeeded[0]!.reviewReady.quarantineReasons.includes("source_authority_unresolved"));
 
   // 9: transaction rollback leaves no partial lineage.
-  const rollbackInput = fixture(equipment.id, variant.id); await registerSource(rollbackInput); const beforeRollback = await lineageCounts();
+  const rollbackInput = fixture(equipment.id, variant.id); await registerSource(rollbackInput);
+  const beforeRollback = await lineageCounts();
+  const beforeQualificationIds = (await db.externalEvidenceQualificationDecision.findMany({ select: { id: true }, orderBy: { id: "asc" } })).map((row) => row.id);
+  const historicalQualificationBeforeRollback = await db.externalEvidenceQualificationDecision.findUniqueOrThrow({ where: { id: first.succeeded[0]!.qualificationDecisionId } });
   const failed = await service.ingest(withClaim(rollbackInput, { dependency: { type: "shared_upstream", rationale: "Missing upstream for rollback.", upstreamClaimId: randomUUID() } }));
-  assert.equal(failed.failed.length, 1); assert.deepEqual(await lineageCounts(), beforeRollback);
+  assert.equal(failed.failed.length, 1);
+  assert.deepEqual(await lineageCounts(), beforeRollback);
+  assert.deepEqual((await db.externalEvidenceQualificationDecision.findMany({ select: { id: true }, orderBy: { id: "asc" } })).map((row) => row.id), beforeQualificationIds);
+  assert.deepEqual(await db.externalEvidenceQualificationDecision.findUniqueOrThrow({ where: { id: first.succeeded[0]!.qualificationDecisionId } }), historicalQualificationBeforeRollback);
+  const validAfterRollback = await service.ingest(rollbackInput);
+  assert.equal(validAfterRollback.failed.length, 0);
+  assert.equal(validAfterRollback.succeeded.length, 1);
+  assert.deepEqual(await service.ingest(rollbackInput), validAfterRollback);
 
   // 10-11: identical concurrency converges and fingerprint collisions fail closed.
   const concurrentInput = fixture(equipment.id, variant.id); await registerSource(concurrentInput);
@@ -172,7 +183,33 @@ integration("Ticket #076 production ingestion PostgreSQL boundary", async () => 
   const v1Claims = await db.externalEvidenceClaim.findMany({ where: { id: { in: multiFirst.succeeded.map((record) => record.rawClaimId) } }, include: { supersededBy: true } });
   assert.ok(v1Claims.every((claim) => claim.supersededBy.length === 1));
   assert.equal(new Set(v1Claims.map((claim) => claim.claimSlotKey)).size, 2);
+  for (let index = 0; index < multiFirst.succeeded.length; index += 1) {
+    const original = v1Claims.find((claim) => claim.id === multiFirst.succeeded[index]!.rawClaimId)!;
+    const newerExtraction: ClaimWithSuperseders = await db.externalEvidenceClaim.findUniqueOrThrow({ where: { id: multiV2.succeeded[index]!.rawClaimId }, include: { supersededBy: true } });
+    const newerDocument: ExternalEvidenceClaim = await db.externalEvidenceClaim.findUniqueOrThrow({ where: { id: documentV2.succeeded[index]!.rawClaimId } });
+    assert.equal(original.supersededBy[0]!.id, newerExtraction.id);
+    assert.equal(newerExtraction.supersedesClaimId, original.id);
+    assert.equal(newerExtraction.supersededBy.length, 1);
+    assert.equal(newerExtraction.supersededBy[0]!.id, newerDocument.id);
+    assert.equal(newerDocument.supersedesClaimId, newerExtraction.id);
+    assert.equal(original.claimSlotKey, newerExtraction.claimSlotKey);
+    assert.equal(newerExtraction.claimSlotKey, newerDocument.claimSlotKey);
+    assert.equal(new Set([original.claimSlotKey, v1Claims[1 - index]!.claimSlotKey]).size, 2);
+  }
   assert.deepEqual(await service.ingest(multiInput), documentV1Replay);
+  const newerExtractionReplay = await service.ingest(multiV2Input);
+  assert.deepEqual(await service.ingest(multiV2Input), newerExtractionReplay);
+  assert.ok(newerExtractionReplay.succeeded.every((record) => !record.reviewReady.current && record.reviewReady.supersessionReason === "document_revision"));
+  const olderLateInput = { ...multiInput, extraction: { ...multiInput.extraction, logicalRunKey: `${multiInput.extraction.logicalRunKey}:older-late`, executedAt: new Date("2026-09-15T00:00:00.000Z") } };
+  const olderLate = await service.ingest(olderLateInput);
+  assert.equal(olderLate.succeeded.length, 2);
+  assert.ok(olderLate.succeeded.every((record) => !record.reviewReady.current));
+  for (const record of olderLate.succeeded) {
+    const claim: ExternalEvidenceClaim = await db.externalEvidenceClaim.findUniqueOrThrow({ where: { id: record.rawClaimId } });
+    assert.equal(claim.supersedesClaimId, null);
+  }
+  const replayedOriginals = await db.externalEvidenceClaim.findMany({ where: { id: { in: multiFirst.succeeded.map((record) => record.rawClaimId) } }, include: { supersededBy: true } });
+  assert.ok(replayedOriginals.every((claim) => claim.supersededBy.length === 1));
 
   // 21-23: unknown-vocabulary, AI, and editorial/unclassified projections replay exactly.
   const unknown = fixture(equipment.id, variant.id); await registerSource(unknown); const unknownInput = withClaim(unknown, { normalization: { ...unknown.claims[0]!.normalization, vocabularyKnown: false } });

@@ -295,7 +295,21 @@ export class PrismaExternalClaimIngestionRepository implements ExternalClaimInge
     if (await this.client.externalEvidenceClaim.findUnique({ where: { id: unit.rawClaimId } })) return;
     const raw = unit.graph.rawClaims[0]!;
     const document = await this.client.externalEvidenceDocument.findUnique({ where: { id: unit.documentId } });
-    const superseded = document?.supersedesDocumentId ? await this.client.externalEvidenceClaim.findFirst({ where: { documentId: document.supersedesDocumentId, claimSlotKey: unit.claimSlotKey, supersededBy: { none: {} } }, orderBy: [{ extractionRun: { executedAt: "desc" } }, { id: "desc" }] }) : undefined;
+    const predecessorDocumentId = document?.supersedesDocumentId ?? unit.documentId;
+    const candidates = await this.client.externalEvidenceClaim.findMany({
+      where: { documentId: predecessorDocumentId, claimSlotKey: unit.claimSlotKey, supersededBy: { none: {} } },
+      include: { extractionRun: true, normalizedClaims: true },
+      orderBy: [{ extractionRun: { executedAt: "desc" } }, { extractionRunId: "desc" }, { id: "desc" }]
+    });
+    const earlierExtraction = candidates.find((candidate) => candidate.extractionRun.executedAt < unit.input.extraction.executedAt ||
+      (candidate.extractionRun.executedAt.getTime() === unit.input.extraction.executedAt.getTime() && candidate.extractionRunId < unit.extractionRunId));
+    const superseded = document?.supersedesDocumentId
+      ? candidates[0]
+      : earlierExtraction && earlierExtraction.rawText === raw.rawText && earlierExtraction.claimType === raw.claimType &&
+        earlierExtraction.normalizedClaims.some((normalized) => normalized.claimKey === unit.claim.normalization.claimKey &&
+          normalized.normalizedUnit === (unit.claim.normalization.unit ?? null) &&
+          stableJson(normalized.normalizedValue) === stableJson(unit.claim.normalization.value))
+        ? earlierExtraction : undefined;
     await this.client.externalEvidenceClaim.create({ data: { id: unit.rawClaimId, documentId: unit.documentId, identityAssertionId: unit.identityAssertionId, extractionRunId: unit.extractionRunId, sourceLocation: raw.sourceLocation, claimSlotKey: unit.claimSlotKey, rawText: raw.rawText, rawStructuredValue: raw.rawStructuredValue === undefined ? undefined : json(raw.rawStructuredValue), claimType: raw.claimType, verificationState: raw.verificationState, reviewState: raw.reviewState, authority: raw.authority, authorityRationale: raw.authorityRationale, limitations: json(raw.limitations), supersedesClaimId: superseded?.id } });
   }
 
