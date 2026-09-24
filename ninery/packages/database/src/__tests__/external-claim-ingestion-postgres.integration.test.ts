@@ -200,6 +200,30 @@ integration("Ticket #076 production ingestion PostgreSQL boundary", async () => 
   const newerExtractionReplay = await service.ingest(multiV2Input);
   assert.deepEqual(await service.ingest(multiV2Input), newerExtractionReplay);
   assert.ok(newerExtractionReplay.succeeded.every((record) => !record.reviewReady.current && record.reviewReady.supersessionReason === "document_revision"));
+  const documentV2SecondInput: ExternalClaimIngestionInput = { ...documentV2Input, extraction: { ...documentV2Input.extraction, logicalRunKey: `${documentV2Input.extraction.logicalRunKey}:second`, executedAt: new Date("2026-09-21T00:00:00.000Z") } };
+  const documentV2Second = await service.ingest(documentV2SecondInput);
+  assert.equal(documentV2Second.succeeded.length, 2);
+  for (let index = 0; index < documentV2.succeeded.length; index += 1) {
+    const first: ClaimWithSuperseders = await db.externalEvidenceClaim.findUniqueOrThrow({ where: { id: documentV2.succeeded[index]!.rawClaimId }, include: { supersededBy: true } });
+    const second: ExternalEvidenceClaim = await db.externalEvidenceClaim.findUniqueOrThrow({ where: { id: documentV2Second.succeeded[index]!.rawClaimId } });
+    assert.equal(first.supersedesClaimId, multiV2.succeeded[index]!.rawClaimId);
+    assert.deepEqual(first.supersededBy.map((claim) => claim.id), [second.id]);
+    assert.equal(second.supersedesClaimId, first.id);
+    assert.equal(first.claimSlotKey, second.claimSlotKey);
+    assert.equal(first.documentId, second.documentId);
+    assert.notEqual(second.claimSlotKey, (await db.externalEvidenceClaim.findUniqueOrThrow({ where: { id: documentV2Second.succeeded[1 - index]!.rawClaimId } })).claimSlotKey);
+    assert.equal(documentV2Second.succeeded[index]!.reviewReady.current, true);
+  }
+  assert.deepEqual(await service.ingest(documentV2SecondInput), documentV2Second);
+  const firstV2Replay = await service.ingest(documentV2Input);
+  assert.ok(firstV2Replay.succeeded.every((record) => !record.reviewReady.current && record.reviewReady.supersessionReason === "later_extraction"));
+  const lateV1Input: ExternalClaimIngestionInput = { ...multiInput, extraction: { ...multiInput.extraction, logicalRunKey: `${multiInput.extraction.logicalRunKey}:late-after-document-v2`, executedAt: new Date("2026-09-22T00:00:00.000Z") } };
+  const lateV1 = await service.ingest(lateV1Input);
+  assert.equal(lateV1.succeeded.length, 2);
+  assert.ok(lateV1.succeeded.every((record) => !record.reviewReady.current && record.documentId === multiFirst.succeeded[0]!.documentId));
+  assert.deepEqual(await service.ingest(lateV1Input), lateV1);
+  const governingV2 = await service.ingest(documentV2SecondInput);
+  assert.ok(governingV2.succeeded.every((record, index) => record.reviewReady.current && record.rawClaimId === documentV2Second.succeeded[index]!.rawClaimId && record.documentId === documentV2.succeeded[index]!.documentId));
   const olderLateInput = { ...multiInput, extraction: { ...multiInput.extraction, logicalRunKey: `${multiInput.extraction.logicalRunKey}:older-late`, executedAt: new Date("2026-09-15T00:00:00.000Z") } };
   const olderLate = await service.ingest(olderLateInput);
   assert.equal(olderLate.succeeded.length, 2);

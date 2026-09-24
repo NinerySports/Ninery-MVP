@@ -132,7 +132,22 @@ export class PrismaExternalClaimIngestionRepository implements ExternalClaimInge
     const conflictMemberships = await this.client.externalEvidenceConflictMember.findMany({ where: { normalizedClaimId: normalized.id }, include: { conflictCase: { include: { resolutions: { orderBy: { decidedAt: "desc" }, take: 1 } } } } });
     const unresolvedConflictIds = conflictMemberships.filter((membership) => membership.conflictCase.resolutions.length === 0).map((membership) => membership.conflictCaseId).sort();
     const slotPeers = await this.client.externalEvidenceNormalizedClaim.findMany({ where: { rawClaim: { claimSlotKey: raw.claimSlotKey } }, include: { rawClaim: { include: { extractionRun: true, document: true, supersededBy: true } } } });
-    const leaves = slotPeers.filter((peer) => peer.rawClaim.supersededBy.length === 0);
+    const slotDocumentIds = new Set(slotPeers.map((peer) => peer.rawClaim.documentId));
+    const documentParents = new Map((await this.client.externalEvidenceDocument.findMany({
+      where: { sourceId: raw.document.sourceId, sourceReference: raw.document.sourceReference },
+      select: { id: true, supersedesDocumentId: true }
+    })).map((document) => [document.id, document.supersedesDocumentId]));
+    const supersededDocumentIds = new Set<string>();
+    for (const documentId of slotDocumentIds) {
+      const visited = new Set<string>();
+      let parentId = documentParents.get(documentId);
+      while (parentId && !visited.has(parentId)) {
+        visited.add(parentId);
+        if (slotDocumentIds.has(parentId)) supersededDocumentIds.add(parentId);
+        parentId = documentParents.get(parentId);
+      }
+    }
+    const leaves = slotPeers.filter((peer) => !supersededDocumentIds.has(peer.rawClaim.documentId) && peer.rawClaim.supersededBy.length === 0);
     const operational = leaves.sort((a, b) => b.rawClaim.extractionRun.executedAt.getTime() - a.rawClaim.extractionRun.executedAt.getTime() || b.rawClaim.extractionRun.id.localeCompare(a.rawClaim.extractionRun.id) || b.id.localeCompare(a.id))[0];
     const current = operational?.id === normalized.id;
     const governanceRevisions = await this.client.externalEvidenceSourceGovernanceRevision.findMany({ where: { sourceId: raw.document.sourceId }, include: { supersededBy: true } });
@@ -295,21 +310,26 @@ export class PrismaExternalClaimIngestionRepository implements ExternalClaimInge
     if (await this.client.externalEvidenceClaim.findUnique({ where: { id: unit.rawClaimId } })) return;
     const raw = unit.graph.rawClaims[0]!;
     const document = await this.client.externalEvidenceDocument.findUnique({ where: { id: unit.documentId } });
-    const predecessorDocumentId = document?.supersedesDocumentId ?? unit.documentId;
-    const candidates = await this.client.externalEvidenceClaim.findMany({
-      where: { documentId: predecessorDocumentId, claimSlotKey: unit.claimSlotKey, supersededBy: { none: {} } },
+    const currentCandidates = await this.client.externalEvidenceClaim.findMany({
+      where: { documentId: unit.documentId, claimSlotKey: unit.claimSlotKey, supersededBy: { none: {} } },
       include: { extractionRun: true, normalizedClaims: true },
       orderBy: [{ extractionRun: { executedAt: "desc" } }, { extractionRunId: "desc" }, { id: "desc" }]
     });
-    const earlierExtraction = candidates.find((candidate) => candidate.extractionRun.executedAt < unit.input.extraction.executedAt ||
+    const earlierExtraction = currentCandidates.find((candidate) => candidate.extractionRun.executedAt < unit.input.extraction.executedAt ||
       (candidate.extractionRun.executedAt.getTime() === unit.input.extraction.executedAt.getTime() && candidate.extractionRunId < unit.extractionRunId));
-    const superseded = document?.supersedesDocumentId
-      ? candidates[0]
-      : earlierExtraction && earlierExtraction.rawText === raw.rawText && earlierExtraction.claimType === raw.claimType &&
+    const priorDocumentClaim = currentCandidates.length === 0 && document?.supersedesDocumentId
+      ? await this.client.externalEvidenceClaim.findFirst({
+          where: { documentId: document.supersedesDocumentId, claimSlotKey: unit.claimSlotKey, supersededBy: { none: {} } },
+          orderBy: [{ extractionRun: { executedAt: "desc" } }, { extractionRunId: "desc" }, { id: "desc" }]
+        })
+      : undefined;
+    const superseded = currentCandidates.length > 0
+      ? earlierExtraction && earlierExtraction.rawText === raw.rawText && earlierExtraction.claimType === raw.claimType &&
         earlierExtraction.normalizedClaims.some((normalized) => normalized.claimKey === unit.claim.normalization.claimKey &&
           normalized.normalizedUnit === (unit.claim.normalization.unit ?? null) &&
           stableJson(normalized.normalizedValue) === stableJson(unit.claim.normalization.value))
-        ? earlierExtraction : undefined;
+        ? earlierExtraction : undefined
+      : priorDocumentClaim;
     await this.client.externalEvidenceClaim.create({ data: { id: unit.rawClaimId, documentId: unit.documentId, identityAssertionId: unit.identityAssertionId, extractionRunId: unit.extractionRunId, sourceLocation: raw.sourceLocation, claimSlotKey: unit.claimSlotKey, rawText: raw.rawText, rawStructuredValue: raw.rawStructuredValue === undefined ? undefined : json(raw.rawStructuredValue), claimType: raw.claimType, verificationState: raw.verificationState, reviewState: raw.reviewState, authority: raw.authority, authorityRationale: raw.authorityRationale, limitations: json(raw.limitations), supersedesClaimId: superseded?.id } });
   }
 
