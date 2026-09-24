@@ -847,11 +847,42 @@ model ExternalEvidenceSource {
   metadata          Json?
   createdAt         DateTime                   @default(now())
 
-  documents ExternalEvidenceDocument[]
+  documents           ExternalEvidenceDocument[]
+  governanceRevisions ExternalEvidenceSourceGovernanceRevision[]
 
   @@index([sourceType])
   @@index([state])
   @@map("external_evidence_sources")
+}
+
+model ExternalEvidenceSourceGovernanceRevision {
+  id                   String                       @id @default(uuid()) @db.Uuid
+  sourceId             String                       @db.Uuid
+  revisionNumber       Int
+  governanceVersion    String
+  sourceType           ExternalEvidenceSourceType
+  publisherIdentity    String?
+  authorityScope       Json
+  dependencyKnowledge  Json
+  state                String
+  reviewerType         ExternalEvidenceReviewerType
+  reviewerReference    String
+  rationale            String
+  effectiveAt          DateTime
+  supersedesRevisionId String?                      @unique @db.Uuid
+  idempotencyKey       String                       @unique
+  createdAt            DateTime                     @default(now())
+
+  source                 ExternalEvidenceSource                     @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  supersedesRevision     ExternalEvidenceSourceGovernanceRevision?  @relation("ExternalSourceGovernanceSupersession", fields: [supersedesRevisionId, sourceId], references: [id, sourceId], onDelete: Restrict)
+  supersededBy           ExternalEvidenceSourceGovernanceRevision[] @relation("ExternalSourceGovernanceSupersession")
+  qualificationDecisions ExternalEvidenceQualificationDecision[]
+
+  @@unique([sourceId, revisionNumber])
+  @@unique([id, sourceId])
+  @@index([sourceId, effectiveAt])
+  @@index([sourceType, state])
+  @@map("external_evidence_source_governance_revisions")
 }
 
 model ExternalEvidenceDocument {
@@ -938,6 +969,7 @@ model ExternalEvidenceClaim {
   identityAssertionId String                            @db.Uuid
   extractionRunId     String                            @db.Uuid
   sourceLocation      String?
+  claimSlotKey        String?
   rawText             String?
   rawStructuredValue  Json?
   claimType           ExternalEvidenceClaimType
@@ -957,13 +989,14 @@ model ExternalEvidenceClaim {
   normalizedClaims      ExternalEvidenceNormalizedClaim[]
   dependencyAssessments ExternalEvidenceDependencyAssessment[] @relation("ExternalClaimDependencySubject")
   upstreamFor           ExternalEvidenceDependencyAssessment[] @relation("ExternalClaimDependencyUpstream")
-  supportingDecisions  ExternalSupportingRoleDecision[]
+  supportingDecisions   ExternalSupportingRoleDecision[]
 
+  @@unique([id, identityAssertionId])
   @@index([documentId])
   @@index([identityAssertionId])
   @@index([claimType, verificationState, reviewState])
   @@index([supersedesClaimId])
-  @@unique([id, identityAssertionId])
+  @@index([claimSlotKey])
   @@map("external_evidence_claims")
 }
 
@@ -990,7 +1023,6 @@ model ExternalEvidenceNormalizedClaim {
   supportingDecisions    ExternalSupportingRoleDecision[]
   conflictMemberships    ExternalEvidenceConflictMember[]
 
-  @@unique([rawClaimId, claimKey, normalizationVersion])
   @@unique([id, rawClaimId])
   @@index([claimKey])
   @@index([verificationState, reviewState])
@@ -1060,30 +1092,48 @@ model ExternalEvidenceConstructRelationship {
 }
 
 model ExternalEvidenceQualificationDecision {
-  id                      String                             @id @default(uuid()) @db.Uuid
-  normalizedClaimId       String                             @db.Uuid
-  constructRelationshipId String                             @db.Uuid
-  contractVersion         String
-  state                   ExternalEvidenceQualificationState
-  proposedEvidenceClass   String?
-  proposedTargetLevel     String?
-  reasons                 Json
-  gaps                    Json
-  blockers                Json
-  warnings                Json
-  limitations             Json
-  idempotencyKey          String                             @unique
-  decidedAt               DateTime                           @default(now())
+  id                         String                             @id @default(uuid()) @db.Uuid
+  normalizedClaimId          String                             @db.Uuid
+  constructRelationshipId    String                             @db.Uuid
+  sourceGovernanceRevisionId String?                            @db.Uuid
+  sourceId                   String?                            @db.Uuid
+  contractVersion            String
+  state                      ExternalEvidenceQualificationState
+  proposedEvidenceClass      String?
+  proposedEvidenceInput      Json?
+  proposedTargetLevel        String?
+  reasons                    Json
+  gaps                       Json
+  blockers                   Json
+  warnings                   Json
+  limitations                Json
+  idempotencyKey             String                             @unique
+  semanticFingerprint        String?
+  decidedAt                  DateTime                           @default(now())
 
-  normalizedClaim       ExternalEvidenceNormalizedClaim       @relation(fields: [normalizedClaimId], references: [id], onDelete: Restrict)
-  constructRelationship ExternalEvidenceConstructRelationship @relation(fields: [constructRelationshipId, normalizedClaimId], references: [id, normalizedClaimId], onDelete: Restrict)
-  supportingDecisions   ExternalSupportingRoleDecision[]
+  normalizedClaim          ExternalEvidenceNormalizedClaim               @relation(fields: [normalizedClaimId], references: [id], onDelete: Restrict)
+  constructRelationship    ExternalEvidenceConstructRelationship         @relation(fields: [constructRelationshipId, normalizedClaimId], references: [id, normalizedClaimId], onDelete: Restrict)
+  sourceGovernanceRevision ExternalEvidenceSourceGovernanceRevision?     @relation(fields: [sourceGovernanceRevisionId, sourceId], references: [id, sourceId], onDelete: Restrict)
+  supportingDecisions      ExternalSupportingRoleDecision[]
+  legacyLineageExemption   ExternalEvidenceLegacyQualificationExemption?
 
   @@unique([id, normalizedClaimId, constructRelationshipId])
   @@index([normalizedClaimId, decidedAt])
   @@index([constructRelationshipId])
   @@index([contractVersion, state])
+  @@index([sourceGovernanceRevisionId])
+  @@index([sourceId])
   @@map("external_evidence_qualification_decisions")
+}
+
+model ExternalEvidenceLegacyQualificationExemption {
+  qualificationId String   @id @db.Uuid
+  reason          String
+  capturedAt      DateTime @default(now())
+
+  qualification ExternalEvidenceQualificationDecision @relation(fields: [qualificationId], references: [id], onDelete: Restrict)
+
+  @@map("external_evidence_legacy_qualification_exemptions")
 }
 
 model ExternalEvidenceReviewDecision {
@@ -1185,7 +1235,7 @@ model ExternalSupportingRoleDecision {
   decidedAt                      DateTime                      @default(now())
 
   normalizedClaim       ExternalEvidenceNormalizedClaim       @relation(fields: [normalizedClaimId, rawClaimId], references: [id, rawClaimId], onDelete: Restrict)
-  rawClaim              ExternalEvidenceClaim                  @relation(fields: [rawClaimId, identityAssertionId], references: [id, identityAssertionId], onDelete: Restrict)
+  rawClaim              ExternalEvidenceClaim                 @relation(fields: [rawClaimId, identityAssertionId], references: [id, identityAssertionId], onDelete: Restrict)
   dependencyAssessment  ExternalEvidenceDependencyAssessment  @relation(fields: [dependencyAssessmentId, rawClaimId], references: [id, claimId], onDelete: Restrict)
   constructRelationship ExternalEvidenceConstructRelationship @relation(fields: [constructRelationshipId, normalizedClaimId], references: [id, normalizedClaimId], onDelete: Restrict)
   qualificationDecision ExternalEvidenceQualificationDecision @relation(fields: [qualificationDecisionId, normalizedClaimId, constructRelationshipId], references: [id, normalizedClaimId, constructRelationshipId], onDelete: Restrict)
