@@ -769,6 +769,7 @@ enum ExternalEvidenceReviewState {
   reviewed_accepted
   reviewed_with_limitations
   reviewed_rejected
+  reviewed_returned
 }
 
 enum ExternalEvidenceDependencyType {
@@ -1030,20 +1031,23 @@ model ExternalEvidenceNormalizedClaim {
 }
 
 model ExternalEvidenceDependencyAssessment {
-  id                     String                         @id @default(uuid()) @db.Uuid
-  claimId                String                         @db.Uuid
-  upstreamClaimId        String?                        @db.Uuid
-  dependencyType         ExternalEvidenceDependencyType
-  independenceGroupId    String?
-  dependencyRationale    String
-  reviewedState          ExternalEvidenceReviewState
-  reviewerType           ExternalEvidenceReviewerType
-  reviewerReference      String
-  reviewedAt             DateTime
-  assessmentVersion      String
-  supersedesAssessmentId String?                        @db.Uuid
-  idempotencyKey         String                         @unique
-  assessedAt             DateTime                       @default(now())
+  id                       String                         @id @default(uuid()) @db.Uuid
+  claimId                  String                         @db.Uuid
+  upstreamClaimId          String?                        @db.Uuid
+  dependencyType           ExternalEvidenceDependencyType
+  independenceGroupId      String?
+  dependencyRationale      String
+  limitations              Json?
+  reviewedState            ExternalEvidenceReviewState
+  reviewerType             ExternalEvidenceReviewerType
+  reviewerReference        String
+  reviewedAt               DateTime
+  assessmentVersion        String
+  reviewedStateFingerprint String?
+  decisionFingerprint      String?
+  supersedesAssessmentId   String?                        @db.Uuid
+  idempotencyKey           String                         @unique
+  assessedAt               DateTime                       @default(now())
 
   claim                ExternalEvidenceClaim                  @relation("ExternalClaimDependencySubject", fields: [claimId], references: [id], onDelete: Restrict)
   upstreamClaim        ExternalEvidenceClaim?                 @relation("ExternalClaimDependencyUpstream", fields: [upstreamClaimId], references: [id], onDelete: Restrict)
@@ -1070,6 +1074,10 @@ model ExternalEvidenceConstructRelationship {
   policyVersion            String
   role                     ExternalEvidenceConstructRole
   reviewState              ExternalEvidenceReviewState
+  reviewerReference        String?
+  reviewedAt               DateTime?
+  reviewedStateFingerprint String?
+  decisionFingerprint      String?
   rationale                String
   limitations              Json
   constructValueCreated    Boolean                       @default(false)
@@ -1137,24 +1145,33 @@ model ExternalEvidenceLegacyQualificationExemption {
 }
 
 model ExternalEvidenceReviewDecision {
-  id                      String                       @id @default(uuid()) @db.Uuid
-  normalizedClaimId       String                       @db.Uuid
-  constructRelationshipId String                       @db.Uuid
-  decision                ExternalEvidenceReviewState
-  reviewerType            ExternalEvidenceReviewerType
-  reviewerReference       String
-  reason                  String
-  limitations             Json
-  idempotencyKey          String                       @unique
-  decidedAt               DateTime                     @default(now())
+  id                       String                       @id @default(uuid()) @db.Uuid
+  normalizedClaimId        String                       @db.Uuid
+  constructRelationshipId  String                       @db.Uuid
+  decision                 ExternalEvidenceReviewState
+  reviewerType             ExternalEvidenceReviewerType
+  reviewerReference        String
+  reason                   String
+  limitations              Json
+  idempotencyKey           String                       @unique
+  governedReviewVersion    String?
+  reviewedBinding          Json?
+  reviewedStateFingerprint String?
+  decisionFingerprint      String?
+  supersedesDecisionId     String?                      @db.Uuid
+  decidedAt                DateTime                     @default(now())
 
   normalizedClaim       ExternalEvidenceNormalizedClaim       @relation(fields: [normalizedClaimId], references: [id], onDelete: Restrict)
   constructRelationship ExternalEvidenceConstructRelationship @relation(fields: [constructRelationshipId, normalizedClaimId], references: [id, normalizedClaimId], onDelete: Restrict)
   supportingDecisions   ExternalSupportingRoleDecision[]
+  supersedesDecision    ExternalEvidenceReviewDecision?       @relation("ExternalReviewSupersession", fields: [supersedesDecisionId], references: [id], onDelete: Restrict)
+  supersededBy          ExternalEvidenceReviewDecision[]      @relation("ExternalReviewSupersession")
 
   @@unique([id, normalizedClaimId, constructRelationshipId])
+  @@unique([supersedesDecisionId])
   @@index([normalizedClaimId, constructRelationshipId, decidedAt])
   @@index([reviewerReference, decidedAt])
+  @@index([reviewedStateFingerprint])
   @@map("external_evidence_review_decisions")
 }
 

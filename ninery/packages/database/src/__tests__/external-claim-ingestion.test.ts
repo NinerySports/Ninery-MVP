@@ -38,7 +38,7 @@ class MemoryRepository implements ExternalClaimIngestionRepository {
   async persist(unit: ExternalClaimPersistenceUnit) {
     if (this.failKeys.has(unit.claim.externalClaimKey)) throw new Error("forced claim failure");
     this.units.push(unit);
-    const record: ExternalClaimIngestionRecord = { idempotencyKey: unit.idempotencyKey, semanticFingerprint: unit.semanticFingerprint, sourceId: unit.sourceId, documentId: unit.documentId, extractionRunId: unit.extractionRunId, identityAssertionId: unit.identityAssertionId, rawClaimId: unit.rawClaimId, normalizedClaimId: unit.normalizedClaimId, dependencyAssessmentId: unit.dependencyAssessmentId, constructRelationshipId: unit.constructRelationshipId, qualificationDecisionId: unit.qualificationDecisionId, qualification: unit.qualification, reviewReady: unit.reviewReady };
+    const record: ExternalClaimIngestionRecord = { idempotencyKey: unit.idempotencyKey, semanticFingerprint: unit.semanticFingerprint, qualificationSemanticFingerprint: unit.qualificationSemanticFingerprint, claimSlotKey: unit.claimSlotKey, sourceId: unit.sourceId, documentId: unit.documentId, extractionRunId: unit.extractionRunId, identityAssertionId: unit.identityAssertionId, rawClaimId: unit.rawClaimId, normalizedClaimId: unit.normalizedClaimId, dependencyAssessmentId: unit.dependencyAssessmentId, constructRelationshipId: unit.constructRelationshipId, qualificationDecisionId: unit.qualificationDecisionId, qualification: unit.qualification, reviewReady: unit.reviewReady };
     this.records.set(unit.idempotencyKey, record);
     return record;
   }
