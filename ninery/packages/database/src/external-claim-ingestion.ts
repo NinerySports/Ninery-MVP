@@ -48,6 +48,8 @@ export type ExternalClaimProposal = {
 export type ExternalClaimIngestionRecord = {
   readonly idempotencyKey: string;
   readonly semanticFingerprint: string;
+  readonly qualificationSemanticFingerprint: string;
+  readonly claimSlotKey: string;
   readonly sourceId: string;
   readonly documentId: string;
   readonly extractionRunId: string;
@@ -116,6 +118,7 @@ export type ExternalClaimPersistenceUnit = ReturnType<typeof buildPersistenceUni
 
 export interface ExternalClaimIngestionRepository {
   transaction<T>(operation: (repository: ExternalClaimIngestionRepository) => Promise<T>): Promise<T>;
+  lockClaimSlot?(claimSlotKey: string): Promise<void>;
   resolveTrustedContext(input: ExternalClaimIngestionInput, claim: ExternalClaimProposal): Promise<ExternalClaimTrustedResolution>;
   findByIdempotencyKey(idempotencyKey: string, semanticFingerprint: string): Promise<ExternalClaimIngestionRecord | undefined>;
   persist(unit: ExternalClaimPersistenceUnit): Promise<ExternalClaimIngestionRecord>;
@@ -152,6 +155,7 @@ export class GovernedExternalClaimIngestionService {
           this.observeRetry?.({ phase: "attempt", attempt: attempt + 1 });
           try {
             const outcome = await this.repository.transaction(async (repository) => {
+              await repository.lockClaimSlot?.(unit.claimSlotKey);
               const existing = await repository.findByIdempotencyKey(unit.idempotencyKey, unit.semanticFingerprint);
               return { record: existing ?? await repository.persist(unit), durableRead: Boolean(existing) };
             });

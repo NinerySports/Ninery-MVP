@@ -8,6 +8,10 @@ export const SOURCE_GOVERNANCE_OPERATIONAL_POLICY_VERSION = "1.0";
 export class PrismaExternalClaimIngestionRepository implements ExternalClaimIngestionRepository {
   constructor(private readonly client: Client, private readonly inTransaction = false) {}
 
+  async lockClaimSlot(claimSlotKey: string): Promise<void> {
+    await this.client.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${claimSlotKey}, 0))::text AS locked`;
+  }
+
   transaction<T>(operation: (repository: ExternalClaimIngestionRepository) => Promise<T>): Promise<T> {
     if (this.inTransaction) return operation(this);
     return (this.client as PrismaClient).$transaction((tx) => operation(new PrismaExternalClaimIngestionRepository(tx, true)), { isolationLevel: "Serializable" });
@@ -77,7 +81,7 @@ export class PrismaExternalClaimIngestionRepository implements ExternalClaimInge
     const row = await this.client.externalEvidenceQualificationDecision.findUnique({
       where: { idempotencyKey },
       include: {
-        normalizedClaim: { include: { rawClaim: { include: { document: { include: { source: true } }, extractionRun: true, identityAssertion: true, dependencyAssessments: { orderBy: { assessedAt: "desc" }, take: 1 } } } } },
+        normalizedClaim: { include: { rawClaim: { include: { document: { include: { source: true } }, extractionRun: true, identityAssertion: true, dependencyAssessments: true } } } },
         constructRelationship: true,
         sourceGovernanceRevision: true
       }
@@ -85,7 +89,7 @@ export class PrismaExternalClaimIngestionRepository implements ExternalClaimInge
     if (!row) return undefined;
     const normalized = row.normalizedClaim;
     const raw = normalized.rawClaim;
-    const dependency = raw.dependencyAssessments[0];
+    const dependency = raw.dependencyAssessments.find((candidate) => externalClaimUuid(`qualification:${canonicalizeExternalClaimValue({ normalizedClaimId: normalized.id, identityAssertionId: raw.identityAssertionId, dependencyAssessmentId: candidate.id, constructRelationshipId: row.constructRelationshipId, contractVersion: row.contractVersion })}`) === row.id);
     if (!dependency) throw new ExternalClaimIngestionError("PERSISTED_LINEAGE_INCOMPLETE", "Qualification exists without its dependency assessment.");
     const extractorIdentity = parseExtractorIdentity(raw.extractionRun.extractorId);
     const sourceExpected = externalClaimUuid(`source:${raw.document.source.stableKey}`);
@@ -169,6 +173,8 @@ export class PrismaExternalClaimIngestionRepository implements ExternalClaimInge
     return {
       idempotencyKey,
       semanticFingerprint,
+      qualificationSemanticFingerprint: row.semanticFingerprint,
+      claimSlotKey: raw.claimSlotKey,
       sourceId: raw.document.sourceId,
       documentId: raw.documentId,
       extractionRunId: raw.extractionRunId,
