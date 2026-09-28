@@ -30,6 +30,8 @@ export type GovernedReviewCase = {
   readonly constructReviewed: boolean;
   readonly constructSuperseded: boolean;
   readonly qualificationSuperseded: boolean;
+  readonly qualificationConvergence?: "current" | "needs_convergence" | "blocked";
+  readonly qualificationConvergenceReason?: string;
   readonly unresolvedConflictCount: number;
   readonly policyVersion: string;
 };
@@ -108,6 +110,8 @@ export type ReviewStatus = {
   readonly applicableDecision?: GovernedReviewRow;
   readonly historicalDecisions: readonly { readonly decision: GovernedReviewRow; readonly reason: "changed_meaning" | "superseded_decision" | "no_longer_current" }[];
   readonly unresolvedDimensions: readonly ReviewDimension[];
+  readonly qualificationConvergence?: GovernedReviewCase["qualificationConvergence"];
+  readonly qualificationConvergenceReason?: string;
 };
 
 export interface GovernedReviewRepository {
@@ -181,7 +185,9 @@ export class GovernedExternalClaimReviewService {
     return {
       binding, stateFingerprint, applicableDecision,
       historicalDecisions: rows.filter((row) => row.id !== applicableDecision?.id).map((decision) => ({ decision,
-        reason: !current ? "no_longer_current" as const : decision.reviewedStateFingerprint !== stateFingerprint ? "changed_meaning" as const : "superseded_decision" as const })),
+        reason: !reviewCase.record.reviewReady.current ? "no_longer_current" as const : decision.reviewedStateFingerprint !== stateFingerprint ? "changed_meaning" as const : !current ? "no_longer_current" as const : "superseded_decision" as const })),
+      qualificationConvergence: reviewCase.qualificationConvergence,
+      qualificationConvergenceReason: reviewCase.qualificationConvergenceReason,
       unresolvedDimensions: [
         ...(!applicableDecision || !["reviewed_accepted", "reviewed_with_limitations"].includes(applicableDecision.decision) ? ["claim" as const] : []),
         ...(!reviewCase.dependencyReviewed || reviewCase.dependencyType === "unknown_dependency" ? ["dependency" as const] : []),
@@ -205,11 +211,22 @@ export class GovernedExternalClaimReviewService {
           existing.reviewedBinding.ingestionSemanticFingerprint !== command.ingestionSemanticFingerprint || existing.reviewedBinding.claimSlotKey !== command.claimSlotKey) {
           throw new GovernedReviewError("IDEMPOTENCY_CONFLICT", "This review key belongs to a different decision.");
         }
+        const reviewCase = await repository.loadCase(command);
+        if (!reviewCase) throw new GovernedReviewError("CASE_NOT_FOUND", "The governed claim case was not found.");
+        this.requireCurrentCase(reviewCase, true);
+        const binding = bindingForReview(reviewCase);
+        if (existing.reviewedStateFingerprint !== fingerprintReviewState(binding)) {
+          throw new GovernedReviewError("STALE_REVIEW_CASE", "The reviewed case changed after this decision was recorded.");
+        }
+        const rows = (await repository.listClaimReviews(binding.claimSlotKey)).filter((row) => row.normalizedClaimId === binding.normalizedClaimId && row.constructRelationshipId === binding.constructRelationshipId);
+        if (rows.some((row) => row.supersedesDecisionId === existing.id)) {
+          throw new GovernedReviewError("STALE_REVIEW_CASE", "The reviewed decision has been superseded.");
+        }
         return existing;
       }
       const reviewCase = await repository.loadCase(command);
       if (!reviewCase) throw new GovernedReviewError("CASE_NOT_FOUND", "The governed claim case was not found.");
-      this.requireCurrentCase(reviewCase);
+      this.requireCurrentCase(reviewCase, true);
       const binding = bindingForReview(reviewCase);
       const reviewedStateFingerprint = fingerprintReviewState(binding);
       if (reviewedStateFingerprint !== command.expectedStateFingerprint) throw new GovernedReviewError("STALE_REVIEW_CASE", "The reviewed case changed before the decision was submitted.");
@@ -270,10 +287,13 @@ export class GovernedExternalClaimReviewService {
     if (command.decision === "reviewed_with_limitations" && !command.limitations?.length) throw new GovernedReviewError("LIMITATIONS_REQUIRED", "Accepted-with-limitations requires explicit limitations.");
   }
 
-  private requireCurrentCase(reviewCase: GovernedReviewCase) {
+  private requireCurrentCase(reviewCase: GovernedReviewCase, contentReview = false) {
+    if (contentReview && reviewCase.qualificationConvergence && reviewCase.qualificationConvergence !== "current") {
+      throw new GovernedReviewError("QUALIFICATION_NEEDS_CONVERGENCE", "Current dimension meaning requires governed qualification before content review.");
+    }
     if (!reviewCase.record.reviewReady.current || reviewCase.record.reviewReady.sourceGovernanceChanged ||
       reviewCase.record.reviewReady.qualificationState !== reviewCase.record.reviewReady.historicalQualificationState ||
-      reviewCase.record.reviewReady.unresolvedConflictIds.length || reviewCase.unresolvedConflictCount || reviewCase.qualificationSuperseded) {
+      reviewCase.record.reviewReady.unresolvedConflictIds.length || reviewCase.unresolvedConflictCount || (reviewCase.qualificationSuperseded && !reviewCase.qualificationConvergence)) {
       throw new GovernedReviewError("CASE_NOT_CURRENT", "This claim is no longer the current governed review case.");
     }
   }

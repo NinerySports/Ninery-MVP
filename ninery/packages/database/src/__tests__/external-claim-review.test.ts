@@ -112,14 +112,15 @@ test("a changed normalization, qualification, governance, dependency, construct,
   }
 });
 
-test("document and extraction successors make approval historical; old exact replay stays idempotent", async () => {
+test("document and extraction successors make approval historical; old exact replay fails closed", async () => {
   for (const field of ["documentId", "extractionRunId"] as const) {
     const repository = new MemoryRepository(fixture()); const service = new GovernedExternalClaimReviewService(repository, authorizer);
     const request = command(repository.current); const first = await service.reviewClaim(request);
     repository.current = { ...repository.current, record: { ...repository.current.record, [field]: randomUUID(), reviewReady: { ...repository.current.record.reviewReady, current: false } } };
     const status = await service.inspect(request);
     assert.equal(status.applicableDecision, undefined); assert.equal(status.historicalDecisions[0]?.reason, "no_longer_current");
-    assert.equal((await service.reviewClaim(request)).id, first.id); assert.equal(repository.rows.length, 1);
+    await assert.rejects(() => service.reviewClaim(request), (error: unknown) => error instanceof GovernedReviewError && error.code === "CASE_NOT_CURRENT");
+    assert.equal(repository.rows[0]?.id, first.id); assert.equal(repository.rows.length, 1);
   }
 });
 

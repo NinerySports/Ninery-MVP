@@ -7,7 +7,8 @@ import { PrismaExternalClaimIngestionRepository } from "../prisma-external-claim
 
 const url = process.env.TEST_DATABASE_URL;
 const integration = url ? test : test.skip;
-const db = url ? new PrismaClient({ datasources: { db: { url } } }) : undefined;
+// Bound fixture startup/connection waits independently of production retry policy.
+const db = url ? new PrismaClient({ datasources: { db: { url } }, transactionOptions: { maxWait: 30000 } }) : undefined;
 type ConflictWithMembers = Prisma.ExternalEvidenceConflictCaseGetPayload<{ include: { members: { include: { normalizedClaim: true } }; resolutions: true } }>;
 type ClaimWithSuperseders = Prisma.ExternalEvidenceClaimGetPayload<{ include: { supersededBy: true } }>;
 
@@ -24,6 +25,9 @@ integration("Ticket #076 production ingestion PostgreSQL boundary", async () => 
   const input = fixture(equipment.id, variant.id); await registerSource(input);
   const first = await service.ingest(input); const replay = await service.ingest(input);
   assert.equal(first.failed.length, 0); assert.deepEqual(replay, first);
+  const persistedProposal = await db.externalEvidenceNormalizedClaim.findUniqueOrThrow({ where: { id: first.succeeded[0]!.normalizedClaimId } });
+  assert.equal(persistedProposal.proposedEvidenceClass, input.claims[0]!.normalization.evidenceClass);
+  assert.equal(persistedProposal.evidenceClass, "verified_catalog_fact");
   assert.equal(await db.externalEvidenceQualificationDecision.count({ where: { idempotencyKey: first.succeeded[0]!.idempotencyKey } }), 1);
   assert.deepEqual(first.succeeded[0]!.qualification.proposedTarget, { level: "variant", equipmentVariantId: variant.id });
   const originalQualificationFingerprint = (await db.externalEvidenceQualificationDecision.findUniqueOrThrow({ where: { id: first.succeeded[0]!.qualificationDecisionId } })).semanticFingerprint;
@@ -242,6 +246,9 @@ integration("Ticket #076 production ingestion PostgreSQL boundary", async () => 
   const aiFirst = await service.ingest(aiInput); const aiReplay = await service.ingest(aiInput); assert.deepEqual(aiReplay, aiFirst); assert.ok(aiReplay.succeeded[0]!.reviewReady.quarantineReasons.includes("ai_extraction_requires_review")); assert.ok(!aiReplay.succeeded[0]!.reviewReady.quarantineReasons.includes("processing_requires_review"));
   const editorial = fixture(equipment.id, variant.id); await registerSource(editorial); const editorialInput = withClaim(editorial, { claimType: "subjective_observation", normalization: { ...editorial.claims[0]!.normalization, evidenceClass: "verified_catalog_fact" } });
   const editorialFirst = await service.ingest(editorialInput); const editorialReplay = await service.ingest(editorialInput); assert.deepEqual(editorialReplay, editorialFirst); assert.equal(editorialReplay.succeeded[0]!.reviewReady.normalizedProposal.evidenceClass, "unclassified");
+  const editorialNormalized = await db.externalEvidenceNormalizedClaim.findUniqueOrThrow({ where: { id: editorialFirst.succeeded[0]!.normalizedClaimId } });
+  assert.equal(editorialNormalized.evidenceClass, "unclassified");
+  assert.equal(editorialNormalized.proposedEvidenceClass, editorialInput.claims[0]!.normalization.evidenceClass);
   const unresolvedDependency = fixture(equipment.id, variant.id); await registerSource(unresolvedDependency); const unresolvedDependencyInput = withClaim(unresolvedDependency, { dependency: { type: "suspected_dependency", rationale: "Possible syndication requires review." } });
   const unresolvedDependencyFirst = await service.ingest(unresolvedDependencyInput); assert.deepEqual(await service.ingest(unresolvedDependencyInput), unresolvedDependencyFirst);
 
