@@ -1002,20 +1002,21 @@ model ExternalEvidenceClaim {
 }
 
 model ExternalEvidenceNormalizedClaim {
-  id                   String                            @id @default(uuid()) @db.Uuid
-  rawClaimId           String                            @db.Uuid
-  claimKey             String
-  normalizedValue      Json
-  normalizedUnit       String?
-  originalValue        Json?
-  originalUnit         String?
-  normalizationMethod  String
-  normalizationVersion String
-  evidenceClass        String
-  verificationState    ExternalEvidenceVerificationState
-  reviewState          ExternalEvidenceReviewState
-  limitations          Json
-  createdAt            DateTime                          @default(now())
+  id                    String                            @id @default(uuid()) @db.Uuid
+  rawClaimId            String                            @db.Uuid
+  claimKey              String
+  normalizedValue       Json
+  normalizedUnit        String?
+  originalValue         Json?
+  originalUnit          String?
+  normalizationMethod   String
+  normalizationVersion  String
+  evidenceClass         String
+  proposedEvidenceClass String?
+  verificationState     ExternalEvidenceVerificationState
+  reviewState           ExternalEvidenceReviewState
+  limitations           Json
+  createdAt             DateTime                          @default(now())
 
   rawClaim               ExternalEvidenceClaim                   @relation(fields: [rawClaimId], references: [id], onDelete: Restrict)
   qualificationDecisions ExternalEvidenceQualificationDecision[]

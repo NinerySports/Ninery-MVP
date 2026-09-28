@@ -2,6 +2,9 @@ import { createHash } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { canonicalizeExternalClaimValue, externalClaimUuid } from "./external-claim-ingestion.js";
 import { PrismaExternalClaimIngestionRepository } from "./prisma-external-claim-ingestion-repository.js";
+import { projectReviewedQualification } from "./prisma-reviewed-dimension-qualification-convergence-repository.js";
+import { QualificationConvergenceError } from "./reviewed-dimension-qualification-convergence.js";
+import { DurableProposedEvidenceClassError } from "./durable-proposed-evidence-class.js";
 import {
   GOVERNED_EXTERNAL_CLAIM_REVIEW_VERSION,
   GOVERNED_EXTERNAL_CLAIM_REVIEW_POLICY_VERSION,
@@ -34,13 +37,17 @@ export class PrismaGovernedReviewRepository implements GovernedReviewRepository 
   }
 
   async loadCase(locator: GovernedReviewLocator): Promise<GovernedReviewCase | undefined> {
-    const record = await new PrismaExternalClaimIngestionRepository(this.client, this.inTransaction).findByIdempotencyKey(locator.ingestionIdempotencyKey, locator.ingestionSemanticFingerprint);
+    if (!this.inTransaction) return this.transaction(async repository => {
+      await repository.lockClaimSlot(locator);
+      return repository.loadCase(locator);
+    });
+    let record = await new PrismaExternalClaimIngestionRepository(this.client, this.inTransaction).findByIdempotencyKey(locator.ingestionIdempotencyKey, locator.ingestionSemanticFingerprint);
     if (!record) return undefined;
     if (record.claimSlotKey !== locator.claimSlotKey || record.sourceId !== locator.sourceId) throw new GovernedReviewError("CLAIM_SCOPE_MISMATCH", "The requested source and claim slot do not match durable lineage.");
     const [dependencies, constructs, qualifications, conflicts] = await Promise.all([
       this.client.externalEvidenceDependencyAssessment.findMany({ where: { claimId: record.rawClaimId }, include: { supersededBy: { select: { id: true } } } }),
       this.client.externalEvidenceConstructRelationship.findMany({ where: { normalizedClaimId: record.normalizedClaimId }, include: { supersededBy: { select: { id: true } } } }),
-      this.client.externalEvidenceQualificationDecision.findMany({ where: { normalizedClaimId: record.normalizedClaimId }, orderBy: [{ decidedAt: "desc" }, { id: "desc" }], select: { id: true } }),
+      this.client.externalEvidenceQualificationDecision.findMany({ where: { normalizedClaimId: record.normalizedClaimId }, select: { id: true } }),
       this.client.$queryRaw<Array<{ count: bigint }>>`SELECT count(*)::bigint AS count FROM "external_evidence_conflict_members" m WHERE m."normalizedClaimId"=${record.normalizedClaimId}::uuid AND COALESCE((SELECT x."outcome"::text IN ('resolved_no_material_conflict','resolved_claim_superseded','resolved_with_limitations') FROM "external_evidence_conflict_resolutions" x WHERE x."conflictCaseId"=m."conflictCaseId" ORDER BY x."decidedAt" DESC, x."id" DESC LIMIT 1), false)=false`
     ]);
     const dependencyLeaves = dependencies.filter((item) => item.supersededBy.length === 0);
@@ -48,13 +55,42 @@ export class PrismaGovernedReviewRepository implements GovernedReviewRepository 
     if (dependencyLeaves.length !== 1 || constructLeaves.length !== 1) throw new GovernedReviewError("AMBIGUOUS_REVIEW_CASE", "The current dependency or construct interpretation is ambiguous.");
     const dependency = dependencyLeaves[0]!;
     const construct = constructLeaves[0]!;
+    const dimensionChanged = dependency.id !== record.dependencyAssessmentId || construct.id !== record.constructRelationshipId;
+    let qualificationConvergence: GovernedReviewCase["qualificationConvergence"];
+    let qualificationConvergenceReason: string | undefined;
+    let qualificationSuperseded = qualifications.some(row => row.id !== record!.qualificationDecisionId);
+    if (dimensionChanged) {
+      qualificationConvergence = "needs_convergence";
+      qualificationSuperseded = true;
+      try {
+        const projection = await projectReviewedQualification(this.client, locator, record, this.inTransaction);
+        if (projection.current) {
+          const { expected, state } = projection;
+          record = { ...record, dependencyAssessmentId: state.dependencyAssessmentId, constructRelationshipId: state.constructRelationshipId,
+            qualificationDecisionId: expected.id, qualificationSemanticFingerprint: expected.semanticFingerprint,
+            qualification: expected.assessment,
+            reviewReady: { ...record.reviewReady, historicalQualificationState: expected.assessment.state, qualificationState: expected.assessment.state,
+              historicalSourceGovernanceRevisionId: state.sourceGovernanceRevisionId, currentSourceGovernanceRevisionId: state.sourceGovernanceRevisionId, sourceGovernanceChanged: false,
+              dependencyState: expected.assessment.dependency ?? record.reviewReady.dependencyState,
+              mappingConfidence: construct.mappingConfidence, mappingVersion: construct.mappingVersion,
+              reasons: expected.assessment.reasons, blockers: expected.assessment.blockers,
+              quarantineReasons: record.reviewReady.quarantineReasons.filter(reason => !reason.startsWith("qualification_") && !reason.startsWith("source_governance_") && reason !== "dependency_unknown" && reason !== "construct_mapping_uncertain") } };
+          qualificationConvergence = "current";
+          qualificationSuperseded = false;
+        }
+      } catch (error) {
+        if (!(error instanceof QualificationConvergenceError) && !(error instanceof DurableProposedEvidenceClassError)) throw error;
+        qualificationConvergence = "blocked";
+        qualificationConvergenceReason = error.code;
+      }
+    }
     return { record, dependencyAssessmentId: dependency.id, dependencyType: String(dependency.dependencyType),
       dependencyReviewed: !!dependency.decisionFingerprint && dependency.reviewerType === "human" && ["reviewed_accepted", "reviewed_with_limitations"].includes(dependency.reviewedState),
       dependencySuperseded: dependency.id !== record.dependencyAssessmentId,
       constructRelationshipId: construct.id,
       constructReviewed: !!construct.decisionFingerprint && !!construct.reviewerReference && ["reviewed_accepted", "reviewed_with_limitations"].includes(construct.reviewState),
       constructSuperseded: construct.id !== record.constructRelationshipId,
-      qualificationSuperseded: qualifications[0]?.id !== record.qualificationDecisionId,
+      qualificationSuperseded, qualificationConvergence, qualificationConvergenceReason,
       unresolvedConflictCount: Number(conflicts[0]?.count ?? 0n),
       policyVersion: GOVERNED_EXTERNAL_CLAIM_REVIEW_POLICY_VERSION };
   }

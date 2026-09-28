@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   qualifyEquipmentClaim,
+  multiSourceEvidenceClassValues,
   type EquipmentClaimAuthority,
   type EquipmentClaimConstructRole,
   type EquipmentClaimDependencyType,
@@ -180,6 +181,9 @@ export class GovernedExternalClaimIngestionService {
 
 function buildPersistenceUnit(input: ExternalClaimIngestionInput, claim: ExternalClaimProposal, trusted: ExternalClaimTrustedResolution) {
   rejectCallerReviewShortcuts(claim);
+  if (!multiSourceEvidenceClassValues.includes(claim.normalization.evidenceClass)) {
+    throw new ExternalClaimIngestionError("INVALID_PROPOSED_EVIDENCE_CLASS", "The proposed evidence class is outside the existing evidence contract.");
+  }
   const evidenceClassUnclassified = requiresUnclassifiedEvidenceProposal(claim);
   const persistedEvidenceClass = evidenceClassUnclassified ? "unclassified" as const : claim.normalization.evidenceClass;
   const ai = input.extraction.method === "ai_assisted" || input.extraction.extractorType === "ai_model";
@@ -198,7 +202,7 @@ function buildPersistenceUnit(input: ExternalClaimIngestionInput, claim: Externa
   const sourceLocation = claim.sourceLocation ?? `external-claim:${claim.externalClaimKey}`;
   const claimSlotKey = hash(stable({ sourceId, sourceReference: input.document.sourceReference, sourceLocation, claimKey: claim.normalization.claimKey, equipmentId: identity.equipmentId, equipmentVariantId: identity.equipmentVariantId }));
   const rawClaimId = uuid(`raw:${stable({ documentId, extractionRunId, identityAssertionId, claimSlotKey, rawText: claim.rawText, rawStructuredValue: claim.rawStructuredValue, claimType: claim.claimType, sourceLocation })}`);
-  const normalizedClaimId = uuid(`normalized:${stable({ rawClaimId, claimKey: claim.normalization.claimKey, value: claim.normalization.value, unit: claim.normalization.unit, originalValue: claim.normalization.originalValue, originalUnit: claim.normalization.originalUnit, method: claim.normalization.method, version: claim.normalization.version, vocabularyKnown: claim.normalization.vocabularyKnown, evidenceClass: persistedEvidenceClass, limitations: claimLimitations })}`);
+  const normalizedClaimId = uuid(`normalized:${stable({ rawClaimId, claimKey: claim.normalization.claimKey, value: claim.normalization.value, unit: claim.normalization.unit, originalValue: claim.normalization.originalValue, originalUnit: claim.normalization.originalUnit, method: claim.normalization.method, version: claim.normalization.version, vocabularyKnown: claim.normalization.vocabularyKnown, evidenceClass: persistedEvidenceClass, proposedEvidenceClass: claim.normalization.evidenceClass, limitations: claimLimitations })}`);
   const dependencyAssessmentId = uuid(`dependency:${stable({ rawClaimId, type: dependency.type, upstreamClaimId: dependency.upstreamClaimId, rationale: dependency.rationale, version: "1.0" })}`);
   const constructName = claim.construct?.proposedConstruct ?? `not_applicable:${claim.normalization.claimKey}`;
   const constructRationale = claim.construct?.rationale ?? "No behavioral construct relationship proposed.";

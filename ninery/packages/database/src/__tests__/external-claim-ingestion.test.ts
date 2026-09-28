@@ -76,6 +76,28 @@ test("exact replay creates no duplicate current-state knowledge", async () => {
   assert.deepEqual(second, first); assert.equal(repository.units.length, 1); assert.equal(repository.records.size, 1);
 });
 
+test("proposed evidence class is qualification-relevant even when governed classification stays unclassified", async () => {
+  const repository = new MemoryRepository();
+  const service = new GovernedExternalClaimIngestionService(repository);
+  const original = base();
+  const claim = { ...original.claims[0]!, claimType: "subjective_observation" as const,
+    normalization: { ...original.claims[0]!.normalization, evidenceClass: "structured_human_evaluation" as const } };
+  const input = { ...original, source: { ...original.source, sourceType: "independent_expert_review" as const }, claims: [claim] };
+  const first = await service.ingest(input);
+  const replay = await service.ingest(input);
+  const changed = await service.ingest({ ...input, claims: [{ ...claim,
+    normalization: { ...claim.normalization, evidenceClass: "modeled_estimate" } }] });
+  assert.deepEqual(first.failed, []);
+  assert.deepEqual(changed.failed, []);
+  assert.equal(first.succeeded[0]!.normalizedClaimId, replay.succeeded[0]!.normalizedClaimId);
+  assert.notEqual(first.succeeded[0]!.normalizedClaimId, changed.succeeded[0]!.normalizedClaimId);
+  assert.notEqual(first.succeeded[0]!.qualificationDecisionId, changed.succeeded[0]!.qualificationDecisionId);
+  assert.equal(repository.units.length, 2);
+  assert.ok(repository.units.every((unit) => unit.persistedEvidenceClass === "unclassified"));
+  assert.deepEqual(repository.units.map((unit) => unit.graph.normalizedClaims[0]!.evidenceClass),
+    ["structured_human_evaluation", "modeled_estimate"]);
+});
+
 test("recognized concurrency retry rereads the durable winner and reports bounded attempts", async () => {
   const repository = new RetryRepository("commit_then_retry");
   const events: Array<{ phase: string; attempt: number; durableRead?: boolean }> = [];

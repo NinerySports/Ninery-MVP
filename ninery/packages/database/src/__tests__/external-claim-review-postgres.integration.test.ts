@@ -53,7 +53,8 @@ integration("Ticket #077 exact-state PostgreSQL review boundary", async () => {
   const afterDependency = await review.inspect(locator);
   assert.equal(afterDependency.applicableDecision, undefined);
   assert.equal(afterDependency.historicalDecisions[0]?.reason, "changed_meaning");
-  assert.equal((await review.reviewClaim(command)).id, first.id);
+  await assert.rejects(() => review.reviewClaim(command), (error: unknown) => error instanceof GovernedReviewError && error.code === "QUALIFICATION_NEEDS_CONVERGENCE");
+  assert.equal((await db.externalEvidenceReviewDecision.findUniqueOrThrow({ where: { id: first.id } })).id, first.id);
 
   const next = await ingestion.ingest({ ...input, extraction: { ...input.extraction, logicalRunKey: `later-${randomUUID()}`, executedAt: new Date("2026-09-25") } });
   assert.deepEqual(next.failed, []);
