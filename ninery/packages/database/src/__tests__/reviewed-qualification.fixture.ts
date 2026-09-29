@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 import { externalClaimUuid, GovernedExternalClaimIngestionService, type ExternalClaimIngestionInput } from "../external-claim-ingestion.js";
 import { PrismaExternalClaimIngestionRepository } from "../prisma-external-claim-ingestion-repository.js";
-import { GovernedExternalClaimReviewService } from "../external-claim-review.js";
+import { GovernedExternalClaimReviewService, type ReviewedSupportingInterpretation } from "../external-claim-review.js";
 import { PrismaGovernedReviewRepository } from "../prisma-external-claim-review-repository.js";
 import { ReviewedDimensionQualificationConvergenceService } from "../reviewed-dimension-qualification-convergence.js";
 import { PrismaReviewedQualificationRepository } from "../prisma-reviewed-dimension-qualification-convergence-repository.js";
@@ -32,6 +32,9 @@ export async function convergenceFixture(db: PrismaClient) {
   const dimensionCommand = async () => ({ ...locator, expectedStateFingerprint: (await review.inspect(locator)).stateFingerprint, credential: token, decision: "reviewed_accepted" as const, reason: "Explicit synthetic human review.", idempotencyKey: randomUUID() });
   const dependency = async () => review.reviewDependency({ ...await dimensionCommand(), dependencyType: "independent_observation", independenceGroupId: `expert:${record.sourceId}` });
   const construct = async () => review.reviewConstruct({ ...await dimensionCommand(), role: "supporting_context", mappingConfidence: "high" });
-  const content = async () => review.reviewClaim({ ...await dimensionCommand() });
+  const content = async (supportingInterpretation?: ReviewedSupportingInterpretation) => review.reviewClaim({
+    ...await dimensionCommand(), expectedStateFingerprint: (await review.inspect(locator, supportingInterpretation)).stateFingerprint,
+    supportingInterpretation
+  });
   return { db, equipment, variant, input, ingestion, record, locator, review, convergence, dimensionCommand, dependency, construct, content, token, authorizer };
 }

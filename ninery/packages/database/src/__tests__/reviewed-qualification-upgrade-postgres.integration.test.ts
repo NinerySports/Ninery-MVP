@@ -11,6 +11,8 @@ import { transpileModule, ModuleKind, ScriptTarget } from "typescript";
 import { PrismaExternalClaimIngestionRepository } from "../prisma-external-claim-ingestion-repository.js";
 import { PrismaReviewedQualificationRepository } from "../prisma-reviewed-dimension-qualification-convergence-repository.js";
 import { ReviewedDimensionQualificationConvergenceService } from "../reviewed-dimension-qualification-convergence.js";
+import { GovernedSupportingContextBridgeService } from "../governed-supporting-context-bridge.js";
+import { PrismaGovernedSupportingContextBridgeRepository } from "../prisma-governed-supporting-context-bridge-repository.js";
 import { convergenceFixture } from "./reviewed-qualification.fixture.js";
 import type { ExternalClaimIngestionRecord } from "../external-claim-ingestion.js";
 
@@ -22,7 +24,7 @@ integration("#078 populated seven-to-eight upgrade preserves historical NULL and
   assert.ok(url);
   const connection = new URL(url);
   assert.equal(connection.hostname, "127.0.0.1");
-  assert.ok(connection.pathname.includes("ticket_078") && connection.pathname.includes("disposable"), "Upgrade testing requires a disposable #078 database");
+  assert.ok(/ticket_07[89]/.test(connection.pathname) && connection.pathname.includes("disposable"), "Upgrade testing requires a disposable #078/#079 database");
   const databaseName = `ticket_078_upgrade_${randomUUID().replaceAll("-", "")}_disposable`;
   const admin = new PrismaClient({ datasources: { db: { url } } });
   await admin.$executeRawUnsafe(`CREATE DATABASE "${databaseName}"`);
@@ -96,6 +98,10 @@ writeFileSync(${JSON.stringify(join(directory, "legacy-record.json"))},JSON.stri
     assert.ok(historical); assert.equal(historical.qualificationDecisionId, record.qualificationDecisionId);
     const locator = { ingestionIdempotencyKey: record.idempotencyKey, ingestionSemanticFingerprint: record.semanticFingerprint, claimSlotKey: record.claimSlotKey, sourceId: record.sourceId };
     await assert.rejects(() => new ReviewedDimensionQualificationConvergenceService(new PrismaReviewedQualificationRepository(client)).converge(locator), /missing_durable_proposed_evidence_class/);
+    await assert.rejects(() => new GovernedSupportingContextBridgeService(new PrismaGovernedSupportingContextBridgeRepository(client)).persist({
+      ...locator, expectedQualificationDecisionId: record.qualificationDecisionId, expectedReviewDecisionId: record.qualificationDecisionId,
+      identityScope: "exact_variant", direction: "lower", idempotencyKey: "historical-proposal-must-not-be-inferred"
+    }), /missing_durable_proposed_evidence_class/);
     assert.equal(await client.externalEvidenceQualificationDecision.count(), 1);
     const fresh = await convergenceFixture(client);
     const normalized = await client.externalEvidenceNormalizedClaim.findUniqueOrThrow({ where: { id: fresh.record.normalizedClaimId } });

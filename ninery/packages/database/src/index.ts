@@ -9,4 +9,6 @@ export * from "./prisma-external-claim-review-repository.js";
 export * from "./durable-proposed-evidence-class.js";
 export * from "./reviewed-dimension-qualification-convergence.js";
 export * from "./prisma-reviewed-dimension-qualification-convergence-repository.js";
+export * from "./governed-supporting-context-bridge.js";
+export * from "./prisma-governed-supporting-context-bridge-repository.js";
 export * from "./atlas-usssa-production-ingestion.fixture.js";

@@ -89,6 +89,7 @@ export class PrismaGovernedReviewRepository implements GovernedReviewRepository 
       dependencySuperseded: dependency.id !== record.dependencyAssessmentId,
       constructRelationshipId: construct.id,
       constructReviewed: !!construct.decisionFingerprint && !!construct.reviewerReference && ["reviewed_accepted", "reviewed_with_limitations"].includes(construct.reviewState),
+      constructRole: construct.role,
       constructSuperseded: construct.id !== record.constructRelationshipId,
       qualificationSuperseded, qualificationConvergence, qualificationConvergenceReason,
       unresolvedConflictCount: Number(conflicts[0]?.count ?? 0n),
@@ -149,6 +150,7 @@ export class PrismaGovernedReviewRepository implements GovernedReviewRepository 
       qualificationSemanticFingerprint: binding.qualificationSemanticFingerprint,
       ingestionSemanticFingerprint: binding.ingestionSemanticFingerprint,
       sourceGovernanceRevisionId: binding.sourceGovernanceRevisionId, policyVersion: binding.policyVersion,
+      ...(binding.supportingInterpretation ? { supportingInterpretation: { ...binding.supportingInterpretation } } : {}),
       ...(binding.equipmentId ? { equipmentId: binding.equipmentId } : {}),
       ...(binding.equipmentVariantId ? { equipmentVariantId: binding.equipmentVariantId } : {})
     };
@@ -156,7 +158,7 @@ export class PrismaGovernedReviewRepository implements GovernedReviewRepository 
       normalizedClaimId: input.normalizedClaimId, constructRelationshipId: input.constructRelationshipId,
       decision: input.decision, reviewerType: "human", reviewerReference: input.reviewerReference,
       reason: input.reason, limitations: [...input.limitations], idempotencyKey: input.idempotencyKey,
-      governedReviewVersion: GOVERNED_EXTERNAL_CLAIM_REVIEW_VERSION, reviewedBinding,
+      governedReviewVersion: binding.version, reviewedBinding,
       reviewedStateFingerprint: input.reviewedStateFingerprint, decisionFingerprint: input.decisionFingerprint,
       supersedesDecisionId: input.supersedesDecisionId
     } });
@@ -214,7 +216,15 @@ function isGovernedBinding(value: unknown): value is GovernedReviewBinding {
   const fields = ["claimSlotKey", "sourceId", "documentId", "extractionRunId", "rawClaimId", "normalizedClaimId", "identityAssertionId",
     "identityCertainty", "dependencyAssessmentId", "dependencyType", "constructRelationshipId", "qualificationDecisionId", "qualificationState",
     "qualificationSemanticFingerprint", "ingestionSemanticFingerprint", "sourceGovernanceRevisionId", "policyVersion"];
-  return record.version === GOVERNED_EXTERNAL_CLAIM_REVIEW_VERSION && fields.every((field) => typeof record[field] === "string" && !!record[field]) &&
+  const candidate = record.supportingInterpretation;
+  const interpretation = candidate && typeof candidate === "object" && !Array.isArray(candidate) ? candidate as Record<string, unknown> : undefined;
+  const validInterpretation = interpretation?.version === "1.0" && interpretation.policyVersion === GOVERNED_EXTERNAL_CLAIM_REVIEW_POLICY_VERSION &&
+    typeof interpretation.construct === "string" && !!interpretation.construct && interpretation.role === "supporting_context" &&
+    ["equipment_family", "certification_family", "drop_family", "size_family", "exact_variant"].includes(String(interpretation.identityScope)) &&
+    ["lower", "moderate_or_neutral", "higher", "comparative_only", "unspecified"].includes(String(interpretation.direction)) &&
+    (interpretation.comparisonTarget === undefined || typeof interpretation.comparisonTarget === "string");
+  return record.version === GOVERNED_EXTERNAL_CLAIM_REVIEW_VERSION && (candidate === undefined || validInterpretation) &&
+    fields.every((field) => typeof record[field] === "string" && !!record[field]) &&
     (record.equipmentId === undefined || typeof record.equipmentId === "string") &&
     (record.equipmentVariantId === undefined || typeof record.equipmentVariantId === "string");
 }
