@@ -1,0 +1,23 @@
+# Ticket #079: Governed supporting-context bridge
+
+The bridge is an explicit, internal persistence command. It does not approve a claim, infer an evidence class, or grant canonical, numeric, synthesis, compatibility, recommendation, or Decision Book authority. It invokes Ticket #075's persistence service and stores only bounded `supporting_context` for a currently qualified, human-accepted claim. `reviewed_with_limitations` is deliberately ineligible in bridge v1.0.
+
+## Explicit interpretation review
+
+The #077 outer binding stays at version `1.0` to preserve its PostgreSQL constraint and trigger. A new, optional `supportingInterpretation` object inside that binding has its own version `1.0`. It records the construct, supporting role, identity scope, direction, comparison target when applicable, and policy version. The existing binding supplies exact claim, D/C/Q, source, document, extraction, and identity lineage. The nested object is covered by the state and decision fingerprints. Operators preview it with `inspect(locator, interpretation)` and explicitly submit the same object with `reviewClaim`; the authorized human reviewer is recorded as before. A generic accepted content review does not authorize a directional interpretation.
+
+Existing reviews without this nested object remain immutable and readable. They cannot pass the bridge. A fresh interpretation-bearing human review must supersede a legacy R2. The bridge derives direction and target from that durable review, checks any caller request for exact equality, and rejects an alternate key or contradictory interpretation. No schema migration or historical backfill is needed.
+
+## Transaction contract
+
+The bridge opens one `ReadCommitted` Prisma transaction, obtains the same claim-slot advisory lock and source-row lock used by #077/#078, then reconstructs Q2 and R2 after those locks are acquired. A fresh statement snapshot after a wait is required: a transaction-wide Serializable snapshot could predate a concurrently committed D3/C3/governance successor. Ticket #075's standalone entry point remains Serializable. Inside the bridge, its transaction-scoped repository joins the already-open transaction; there is no nested transaction or out-of-transaction write. #075's binding checks, role policy, immutable insert, database constraints, and trigger remain in force.
+
+Successors using the governed slot/source locks either commit before reconstruction (and invalidate Q2/R2) or wait until supporting persistence commits. The latter leaves the persisted decision as immutable historical evidence, not a claim of current eligibility. The bridge next locks the normalized-claim row `FOR UPDATE`, then its existing conflict-case rows in ID order `FOR UPDATE`, before reconstructing currentness. A cross-source conflict-member insert needs a foreign-key key-share lock on that normalized row; a conflict-resolution successor needs one on its case row. Either writer commits before these locks and is observed by fresh reads, or waits until the bridge commits. Raw/normalized status is append-only; same-slot supersession uses the advisory lock. The bridge also holds `FOR SHARE` locks on the asserted equipment and variant rows while it rereads their facts, checks them against the identity assertion, and inserts the decision. A concurrent catalog update must wait; after it commits, replay fails closed. The database boundary still enforces its foreign keys and transaction rollback.
+
+## Eligibility and replay
+
+The caller supplies exact expected Q2/R2 IDs. The bridge verifies current #078 qualification, current #077 review binding and sole leaf R2, human provenance, accepted content, current source and identity, and #075 role eligibility. It then delegates the insert to #075. Missing or ambiguous current state fails closed. In particular, Q1, historical R1, stale R2, unresolved conflict, absent proposed evidence class, superseded document, changed D/C/governance, or mismatched catalog identity cannot be bridged.
+
+The idempotency key is a SHA-256 digest over the bridge version, #075 policy and version, exact raw/normalized/D/C/Q/R lineage, identity scope, direction, and comparison target. The service requires that key rather than accepting arbitrary alternate keys. Exact replay returns the same #075 decision only after all currentness and eligibility checks pass again; stale replay fails while its historical decision remains queryable. A post-insert failure rolls back the whole transaction.
+
+No schema or migration was required. The bridge does not write through #075's upstream review or ingestion tables, and it does not integrate with #066/#067.

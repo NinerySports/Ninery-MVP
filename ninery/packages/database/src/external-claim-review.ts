@@ -4,6 +4,16 @@ import { canonicalizeExternalClaimValue, type ExternalClaimIngestionRecord } fro
 export const GOVERNED_EXTERNAL_CLAIM_REVIEW_VERSION = "1.0" as const;
 export const GOVERNED_EXTERNAL_CLAIM_REVIEW_POLICY_VERSION = "1.0-provisional" as const;
 
+export type ReviewedSupportingInterpretation = {
+  readonly version: "1.0";
+  readonly policyVersion: typeof GOVERNED_EXTERNAL_CLAIM_REVIEW_POLICY_VERSION;
+  readonly construct: string;
+  readonly role: "supporting_context";
+  readonly identityScope: "equipment_family" | "certification_family" | "drop_family" | "size_family" | "exact_variant";
+  readonly direction: "lower" | "moderate_or_neutral" | "higher" | "comparative_only" | "unspecified";
+  readonly comparisonTarget?: string;
+};
+
 export type ReviewDecisionState = "reviewed_accepted" | "reviewed_with_limitations" | "reviewed_rejected" | "reviewed_returned";
 export type ReviewDimension = "claim" | "dependency" | "construct";
 export type TrustedReviewer = { readonly id: string; readonly authority: "external_claim_reviewer" };
@@ -29,6 +39,7 @@ export type GovernedReviewCase = {
   readonly constructRelationshipId: string;
   readonly constructReviewed: boolean;
   readonly constructSuperseded: boolean;
+  readonly constructRole?: string;
   readonly qualificationSuperseded: boolean;
   readonly qualificationConvergence?: "current" | "needs_convergence" | "blocked";
   readonly qualificationConvergenceReason?: string;
@@ -57,6 +68,7 @@ export type GovernedReviewBinding = {
   readonly ingestionSemanticFingerprint: string;
   readonly sourceGovernanceRevisionId: string;
   readonly policyVersion: string;
+  readonly supportingInterpretation?: ReviewedSupportingInterpretation;
 };
 
 export type GovernedReviewRow = {
@@ -82,6 +94,7 @@ export type ClaimReviewCommand = GovernedReviewLocator & {
   readonly limitations?: readonly string[];
   readonly idempotencyKey: string;
   readonly expectedPriorDecisionId?: string;
+  readonly supportingInterpretation?: ReviewedSupportingInterpretation;
 };
 
 export type DimensionReviewCommand = GovernedReviewLocator & {
@@ -131,8 +144,14 @@ export class GovernedReviewError extends Error {
   constructor(readonly code: string, message: string) { super(message); this.name = "GovernedReviewError"; }
 }
 
-export function bindingForReview(reviewCase: GovernedReviewCase): GovernedReviewBinding {
+export function bindingForReview(reviewCase: GovernedReviewCase, interpretation?: ReviewedSupportingInterpretation): GovernedReviewBinding {
   const { record, dependencyAssessmentId, dependencyType, constructRelationshipId, policyVersion } = reviewCase;
+  if (interpretation && (interpretation.version !== "1.0" || interpretation.policyVersion !== policyVersion ||
+    interpretation.construct !== record.reviewReady.proposedConstruct || reviewCase.constructRole !== "supporting_context" ||
+    interpretation.role !== reviewCase.constructRole || !interpretation.construct.trim() ||
+    (interpretation.comparisonTarget !== undefined && (!interpretation.comparisonTarget.trim() || interpretation.comparisonTarget !== interpretation.comparisonTarget.trim())))) {
+    throw new GovernedReviewError("INTERPRETATION_NOT_APPLICABLE", "The proposed supporting interpretation does not match the governed construct and policy.");
+  }
   return {
     version: GOVERNED_EXTERNAL_CLAIM_REVIEW_VERSION,
     claimSlotKey: record.claimSlotKey,
@@ -153,7 +172,8 @@ export function bindingForReview(reviewCase: GovernedReviewCase): GovernedReview
     qualificationSemanticFingerprint: record.qualificationSemanticFingerprint,
     ingestionSemanticFingerprint: record.semanticFingerprint,
     sourceGovernanceRevisionId: record.reviewReady.currentSourceGovernanceRevisionId,
-    policyVersion
+    policyVersion,
+    ...(interpretation ? { supportingInterpretation: interpretation } : {})
   };
 }
 
@@ -168,10 +188,10 @@ function fingerprintDecision(input: { binding: GovernedReviewBinding; decision: 
 export class GovernedExternalClaimReviewService {
   constructor(private readonly repository: GovernedReviewRepository, private readonly authorizer: ExternalClaimReviewerAuthorizer) {}
 
-  async inspect(locator: GovernedReviewLocator): Promise<ReviewStatus> {
+  async inspect(locator: GovernedReviewLocator, interpretation?: ReviewedSupportingInterpretation): Promise<ReviewStatus> {
     const reviewCase = await this.repository.loadCase(locator);
     if (!reviewCase) throw new GovernedReviewError("CASE_NOT_FOUND", "The governed claim case was not found.");
-    const binding = bindingForReview(reviewCase);
+    const binding = bindingForReview(reviewCase, interpretation);
     const stateFingerprint = fingerprintReviewState(binding);
     const rows = await this.repository.listClaimReviews(binding.claimSlotKey);
     const current = reviewCase.record.reviewReady.current && !reviewCase.record.reviewReady.sourceGovernanceChanged &&
@@ -214,7 +234,7 @@ export class GovernedExternalClaimReviewService {
         const reviewCase = await repository.loadCase(command);
         if (!reviewCase) throw new GovernedReviewError("CASE_NOT_FOUND", "The governed claim case was not found.");
         this.requireCurrentCase(reviewCase, true);
-        const binding = bindingForReview(reviewCase);
+        const binding = bindingForReview(reviewCase, command.supportingInterpretation);
         if (existing.reviewedStateFingerprint !== fingerprintReviewState(binding)) {
           throw new GovernedReviewError("STALE_REVIEW_CASE", "The reviewed case changed after this decision was recorded.");
         }
@@ -227,7 +247,7 @@ export class GovernedExternalClaimReviewService {
       const reviewCase = await repository.loadCase(command);
       if (!reviewCase) throw new GovernedReviewError("CASE_NOT_FOUND", "The governed claim case was not found.");
       this.requireCurrentCase(reviewCase, true);
-      const binding = bindingForReview(reviewCase);
+      const binding = bindingForReview(reviewCase, command.supportingInterpretation);
       const reviewedStateFingerprint = fingerprintReviewState(binding);
       if (reviewedStateFingerprint !== command.expectedStateFingerprint) throw new GovernedReviewError("STALE_REVIEW_CASE", "The reviewed case changed before the decision was submitted.");
       const limitations = [...new Set(command.limitations ?? [])].sort();
