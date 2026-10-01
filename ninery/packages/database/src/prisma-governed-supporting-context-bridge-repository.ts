@@ -10,7 +10,7 @@ import { GovernedSupportingContextBridgeError, type CurrentGovernedSupportingLin
 type Client = PrismaClient | Prisma.TransactionClient;
 
 export class PrismaGovernedSupportingContextBridgeRepository implements GovernedSupportingContextBridgeRepository {
-  constructor(private readonly client: Client, private readonly inTransaction = false) {}
+  constructor(private readonly client: Client, private readonly inTransaction = false, private readonly readOnly = false) {}
 
   transaction<T>(operation: (repository: GovernedSupportingContextBridgeRepository) => Promise<T>): Promise<T> {
     if (this.inTransaction) return operation(this);
@@ -33,12 +33,12 @@ export class PrismaGovernedSupportingContextBridgeRepository implements Governed
 
   async loadCurrent(locator: GovernedReviewLocator): Promise<CurrentGovernedSupportingLineage> {
     if (!this.inTransaction) throw new GovernedSupportingContextBridgeError("TRANSACTION_REQUIRED");
-    const qualificationRepository = new PrismaReviewedQualificationRepository(this.client, true);
+    const qualificationRepository = new PrismaReviewedQualificationRepository(this.client, !this.readOnly);
     const state = await qualificationRepository.load(locator);
     const expected = assessReviewedQualification(state);
     if (!await qualificationRepository.findCurrent(state, expected)) throw new GovernedSupportingContextBridgeError("QUALIFICATION_NOT_CURRENT");
 
-    const reviewRepository = new PrismaGovernedReviewRepository(this.client, true);
+    const reviewRepository = new PrismaGovernedReviewRepository(this.client, true, this.readOnly);
     const reviewCase = await reviewRepository.loadCase(locator);
     if (!reviewCase || reviewCase.qualificationConvergence !== "current" || reviewCase.qualificationSuperseded ||
       !reviewCase.record.reviewReady.current || reviewCase.record.reviewReady.sourceGovernanceChanged ||
@@ -85,9 +85,9 @@ export class PrismaGovernedSupportingContextBridgeRepository implements Governed
       include: { identityAssertion: true } });
     const identity = raw.identityAssertion;
     if (!identity.equipmentId) throw new GovernedSupportingContextBridgeError("CATALOG_IDENTITY_MISMATCH");
-    await this.client.$queryRaw`SELECT "id" FROM "equipment" WHERE "id" = ${identity.equipmentId}::uuid FOR SHARE`;
+    if (!this.readOnly) await this.client.$queryRaw`SELECT "id" FROM "equipment" WHERE "id" = ${identity.equipmentId}::uuid FOR SHARE`;
     if (identity.equipmentVariantId) {
-      await this.client.$queryRaw`SELECT "id" FROM "equipment_variants" WHERE "id" = ${identity.equipmentVariantId}::uuid FOR SHARE`;
+      if (!this.readOnly) await this.client.$queryRaw`SELECT "id" FROM "equipment_variants" WHERE "id" = ${identity.equipmentVariantId}::uuid FOR SHARE`;
     }
     const equipment = await this.client.equipment.findUnique({ where: { id: identity.equipmentId } });
     const variant = identity.equipmentVariantId

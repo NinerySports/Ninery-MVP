@@ -23,7 +23,7 @@ import {
 type Client = PrismaClient | Prisma.TransactionClient;
 
 export class PrismaGovernedReviewRepository implements GovernedReviewRepository {
-  constructor(private readonly client: Client, private readonly inTransaction = false) {}
+  constructor(private readonly client: Client, private readonly inTransaction = false, private readonly readOnly = false) {}
 
   transaction<T>(operation: (repository: GovernedReviewRepository) => Promise<T>): Promise<T> {
     if (this.inTransaction) return operation(this);
@@ -63,7 +63,7 @@ export class PrismaGovernedReviewRepository implements GovernedReviewRepository 
       qualificationConvergence = "needs_convergence";
       qualificationSuperseded = true;
       try {
-        const projection = await projectReviewedQualification(this.client, locator, record, this.inTransaction);
+        const projection = await projectReviewedQualification(this.client, locator, record, this.inTransaction && !this.readOnly);
         if (projection.current) {
           const { expected, state } = projection;
           record = { ...record, dependencyAssessmentId: state.dependencyAssessmentId, constructRelationshipId: state.constructRelationshipId,

@@ -7,10 +7,16 @@ import { PrismaGovernedReviewRepository } from "../prisma-external-claim-review-
 import { ReviewedDimensionQualificationConvergenceService } from "../reviewed-dimension-qualification-convergence.js";
 import { PrismaReviewedQualificationRepository } from "../prisma-reviewed-dimension-qualification-convergence-repository.js";
 
-export async function convergenceFixture(db: PrismaClient) {
-  const equipment = await db.equipment.create({ data: { manufacturer: "Convergence Fixture", model: randomUUID(), modelYear: 2026, category: "bat", certification: "USSSA" } });
-  const variant = await db.equipmentVariant.create({ data: { equipmentId: equipment.id, lengthInches: 30, weightOunces: 20, dropWeight: -10, sku: `CONVERGENCE-${randomUUID()}` } });
-  const identity = { id: "target", certainty: "exact_variant_match" as const, manufacturer: equipment.manufacturer, model: equipment.model, modelYear: 2026, certification: "USSSA", lengthInches: 30, weightOunces: 20, drop: -10, equipmentId: equipment.id, equipmentVariantId: variant.id, limitations: [] };
+export async function convergenceFixture(db: PrismaClient, identityIds?: { readonly equipmentId: string; readonly variantId: string; readonly sku: string }) {
+  const equipment = identityIds && await db.equipment.findUnique({ where: { id: identityIds.equipmentId } }) ||
+    await db.equipment.create({ data: { id: identityIds?.equipmentId, manufacturer: "Convergence Fixture", model: randomUUID(), modelYear: 2026, category: "bat", certification: "USSSA" } });
+  const variant = identityIds && await db.equipmentVariant.findUnique({ where: { id: identityIds.variantId } }) ||
+    await db.equipmentVariant.create({ data: { id: identityIds?.variantId, equipmentId: equipment.id, lengthInches: 30, weightOunces: 20, dropWeight: -10, sku: identityIds?.sku ?? `CONVERGENCE-${randomUUID()}` } });
+  if (variant.equipmentId !== equipment.id) throw new Error("Fixture variant belongs to another equipment model.");
+  const identity = { id: "target", certainty: "exact_variant_match" as const, manufacturer: equipment.manufacturer,
+    model: equipment.model, modelYear: equipment.modelYear ?? undefined, certification: equipment.certification,
+    lengthInches: Number(variant.lengthInches), weightOunces: Number(variant.weightOunces), drop: variant.dropWeight ?? undefined,
+    sku: variant.sku ?? undefined, equipmentId: equipment.id, equipmentVariantId: variant.id, limitations: [] };
   const input: ExternalClaimIngestionInput = {
     source: { stableKey: `convergence-source-${randomUUID()}`, displayName: "Synthetic external expert", sourceType: "independent_expert_review", publisherIdentity: "Synthetic expert", sourceVersion: "fixture-source-1.0" },
     document: { sourceReference: `https://example.invalid/${randomUUID()}`, documentType: "review_article", title: "Synthetic bounded observation", capturedAt: new Date("2026-09-24"), availability: "available", boundedContent: "Easy to start moving." },
