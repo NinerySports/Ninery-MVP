@@ -5,3 +5,4 @@ ninery/.corepack-bin/
 .codex/bin/
 outputs/
 work/
+.pnpm-store/
