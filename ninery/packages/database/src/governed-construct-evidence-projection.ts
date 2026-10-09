@@ -1,4 +1,4 @@
-import { equipmentDNAConstructEvidenceMap, type EquipmentDNAEvidenceItem } from "@ninery/equipment-intelligence";
+import { equipmentDNAConstructEvidenceMap, type EquipmentDNAEvidenceItem, type StrongerEvidenceAdmissibility } from "@ninery/equipment-intelligence";
 import type { GovernedSupportingContextEntry, GovernedSupportingContextProjection } from "./governed-supporting-context-projection.js";
 
 export const GOVERNED_CONSTRUCT_EVIDENCE_PROJECTION_VERSION = "1.0" as const;
@@ -12,12 +12,14 @@ export type GovernedConstructEvidenceRequest = {
 export type GovernedConstructEvidenceSnapshot = {
   readonly stronger: readonly GovernedStrongerEvidence[];
   readonly supporting: Pick<GovernedSupportingContextProjection, "current" | "historical" | "semantics">;
+  readonly admissibility: readonly StrongerEvidenceAdmissibility[];
 };
 
 export type GovernedStrongerEvidence = EquipmentDNAEvidenceItem & {
   readonly attributeDefinitionVersion: string;
   readonly sourceType: string;
   readonly constructRole: "primary_candidate" | "supporting_candidate" | "validation_candidate" | "future_validation_candidate";
+  readonly admissibility: StrongerEvidenceAdmissibility;
 };
 
 export interface GovernedConstructEvidenceRepository {
@@ -28,6 +30,7 @@ export type GovernedConstructEvidenceProjection = {
   readonly version: typeof GOVERNED_CONSTRUCT_EVIDENCE_PROJECTION_VERSION;
   readonly request: GovernedConstructEvidenceRequest;
   readonly strongerEvidence: readonly GovernedStrongerEvidence[];
+  readonly strongerEvidenceAdmissibility: readonly StrongerEvidenceAdmissibility[];
   readonly excludedStrongerEvidence: readonly GovernedStrongerEvidence[];
   readonly currentSupportingContext: readonly GovernedSupportingContextEntry[];
   readonly historicalSupportingContext: readonly GovernedSupportingContextEntry[];
@@ -60,12 +63,14 @@ export class GovernedConstructEvidenceProjectionService {
     const snapshot = await this.repository.readSnapshot(request);
     const sortEvidence = (a: GovernedStrongerEvidence, b: GovernedStrongerEvidence) =>
       a.evidenceClass.localeCompare(b.evidenceClass) || a.id.localeCompare(b.id);
-    const strongerEvidence = snapshot.stronger.filter(item => item.status === "active").sort(sortEvidence);
-    const excludedStrongerEvidence = snapshot.stronger.filter(item => item.status !== "active").sort(sortEvidence);
-    const directEvidence = strongerEvidence.filter(item => item.constructRole === "primary_candidate");
+    const admitted = (item: GovernedStrongerEvidence) => item.admissibility.disposition === "admissible" || item.admissibility.disposition === "admissible_with_restrictions";
+    const strongerEvidence = snapshot.stronger.filter(admitted).sort(sortEvidence);
+    const excludedStrongerEvidence = snapshot.stronger.filter(item => !admitted(item)).sort(sortEvidence);
+    const directEvidence = strongerEvidence.filter(item => item.constructRole === "primary_candidate" && item.admissibility.permittedAssessment === "construct_evidence");
     const currentSupportingContext = [...snapshot.supporting.current].sort((a, b) => a.decidedAt.localeCompare(b.decidedAt) || a.decisionId.localeCompare(b.decisionId));
     const historicalSupportingContext = [...snapshot.supporting.historical].sort((a, b) => a.decidedAt.localeCompare(b.decidedAt) || a.decisionId.localeCompare(b.decisionId));
-    const knownIndependentStrongerGroups = [...new Set(directEvidence.map(item => item.independenceGroup).filter(isString))].sort();
+    // Evaluator relationships do not establish evidence-source independence.
+    const knownIndependentStrongerGroups: readonly string[] = [];
     const currentSupportingGroups = [...new Set(currentSupportingContext.map(item => item.provenance.independence === "reviewed_independent" ? item.provenance.independenceGroupId : undefined).filter(isString))].sort();
     const contextualDirections = [...new Set(currentSupportingContext.map(item => item.direction))].sort();
     const blockers = ["synthesis_policy_not_established", "synthesis_not_permitted"];
@@ -75,6 +80,7 @@ export class GovernedConstructEvidenceProjectionService {
     return {
       version: GOVERNED_CONSTRUCT_EVIDENCE_PROJECTION_VERSION, request,
       strongerEvidence, excludedStrongerEvidence, currentSupportingContext, historicalSupportingContext,
+      strongerEvidenceAdmissibility: [...snapshot.admissibility].sort((a, b) => a.evidenceRecordId.localeCompare(b.evidenceRecordId)),
       directEvidenceRecordCount: directEvidence.length, knownIndependentStrongerGroups, currentSupportingGroups,
       descriptiveState: blockers.includes("stronger_evidence_requires_review") ? "review_required" : directEvidence.length ? "direct_evidence_present" : "no_direct_evidence",
       gaps, blockers, contextualDirections, semantics: snapshot.supporting.semantics,
