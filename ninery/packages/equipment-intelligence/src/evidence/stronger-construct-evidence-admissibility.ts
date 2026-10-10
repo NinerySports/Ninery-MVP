@@ -6,6 +6,7 @@ import { physicalEvaluationProtocolV11Questions, isProtocolV11CalibrationEvidenc
 import { physicalBatStandaloneObservationScale } from "../physical-evaluation/structured-physical-bat-evaluation.policy.js";
 import { physicalMeasurementMethods, circumferenceDerivedDiameterMethods } from "./physical-measurement/physical-measurement-protocol.js";
 import { getEquipmentDNAAttributeDefinition, validateEquipmentDNAAttributeValue } from "../attributes/index.js";
+import { humanCalibrationAcquisitionGaps, physicalMeasurementAcquisitionGaps } from "./stronger-evidence-acquisition.validation.js";
 
 export const STRONGER_CONSTRUCT_EVIDENCE_ADMISSIBILITY_VERSION = "1.0" as const;
 export const strongerEvidenceReasonCodes = [
@@ -119,6 +120,7 @@ function assess(record: StrongerEvidenceCandidate, input: Parameters<typeof asse
     if (record.attributeDefinitionVersion !== "1.0") excluded.push("unsupported_definition_version");
     if (protocolVersion !== "1.1") unresolved.push("unsupported_protocol_version");
     else {
+      missing.push(...humanCalibrationAcquisitionGaps(record, metadata));
       const question = physicalEvaluationProtocolV11Questions.find(item => item.dimensionKey === input.request.construct);
       if (!question || metadata.questionId !== question.id || metadata.dimensionKey !== question.dimensionKey || record.attributeKey !== question.attributeKey || metadata.inverseSemantics !== (question.responseScale === "five_level_inverse_degradation")) excluded.push("incompatible_value_representation");
       if (!isProtocolV11CalibrationEvidence({ sourceReference: record.sourceReference ?? "", rawValue: record.rawValue }) || metadata.provenanceClassification !== "real_protocol_calibration_observation") unresolved.push("missing_required_provenance");
@@ -135,6 +137,7 @@ function assess(record: StrongerEvidenceCandidate, input: Parameters<typeof asse
     const methodDefinition = methods.find(method => method.measurementType === record.attributeKey && method.method === metadata.method);
     if (!methodDefinition) excluded.push("unsupported_method");
     else {
+      missing.push(...physicalMeasurementAcquisitionGaps(record, metadata, methodDefinition));
       const trials = Array.isArray(metadata.trials) ? metadata.trials.map(object) : [];
       need("protocol_trials", trials.length >= methodDefinition.minimumTrials && trials.every(trial => trial && typeof trial.value === "number" && Number.isFinite(trial.value) && typeof trial.trialNumber === "number" && trial.repositioned === true));
       need("reference_points", metadata.referencePoints === methodDefinition.referencePoints);
@@ -146,7 +149,6 @@ function assess(record: StrongerEvidenceCandidate, input: Parameters<typeof asse
     need("trials", Array.isArray(metadata.trials) && metadata.trials.length > 0);
     need("physical_verification", verification?.confidence === "confident" && !!date(verification.verifiedAt) && !!text(verification.verifiedBy));
     if (metadata.provenanceClassification !== "real_physical_measurement") unresolved.push("missing_required_provenance");
-    need("equipment_condition", ["new", "normal_used_condition", "materially_worn", "modified"].includes(String(metadata.equipmentCondition)));
     need("measurement_quality", ["complete_repeatable", "complete_variation_observed", "instrument_uncertain"].includes(String(metadata.quality)));
   } else if (evidenceClass === "structured_field_observation" || evidenceClass === "modeled_estimate") {
     if (record.method !== (evidenceClass === "modeled_estimate" ? "derived_mapping" : "structured_feedback")) excluded.push("unsupported_method");

@@ -128,4 +128,31 @@ integration("#082 repeatable-read snapshot spans concurrent evidence status and 
   assert.ok(after.strongerEvidenceAdmissibility[0]?.exclusions.includes("withdrawn_evidence"));
 });
 
+integration("#082 snapshot marker cannot bypass root-client protection", () => {
+  assert.ok(db);
+  assert.throws(() => new PrismaGovernedConstructEvidenceProjectionRepository(db, true), /PROTECTED_SNAPSHOT_ROOT_CLIENT_REJECTED/);
+});
+
+for (const isolationLevel of [Prisma.TransactionIsolationLevel.ReadCommitted, Prisma.TransactionIsolationLevel.RepeatableRead]) integration(`#082 unprotected ${isolationLevel} transaction fails before projection reads`, async () => {
+  assert.ok(db);
+  await db.$transaction(async tx => {
+    const repository = new PrismaGovernedConstructEvidenceProjectionRepository(tx, true);
+    await assert.rejects(repository.readSnapshot({ equipmentId: randomUUID(), construct: "startup_demand" }), /PROTECTED_SNAPSHOT_SETTINGS_REQUIRED/);
+  }, { isolationLevel });
+});
+
+integration("#082 incomplete persisted acquisition remains visible but inadmissible", async () => {
+  assert.ok(db);
+  const f = await setup();
+  const metadata = JSON.parse(JSON.stringify(f.evidence.rawValue));
+  delete metadata.drySwingBlocks;
+  await db.equipmentDNAEvidenceRecord.update({ where: { id: f.evidence.id }, data: { rawValue: metadata } });
+  const result = await f.projection.load(f.request);
+  assert.equal(result.strongerEvidence.length, 0);
+  assert.equal(result.directEvidenceRecordCount, 0);
+  assert.equal(result.strongerEvidenceAdmissibility[0]?.provenance.complete, false);
+  assert.equal(result.strongerEvidenceAdmissibility[0]?.permittedAssessment, "none");
+  assert.equal(result.currentSupportingContext[0]?.decisionId, f.support.id);
+});
+
 test.after(async () => { await db?.$disconnect(); });

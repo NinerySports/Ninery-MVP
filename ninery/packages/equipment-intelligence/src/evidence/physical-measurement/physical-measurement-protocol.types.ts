@@ -1,8 +1,10 @@
 export const physicalMeasurementTypes = ["actual_mass", "overall_length", "balance_point", "barrel_diameter", "handle_diameter"] as const;
 export type PhysicalMeasurementType = (typeof physicalMeasurementTypes)[number];
 export type MeasurementQuality = "complete_repeatable" | "complete_variation_observed" | "incomplete" | "instrument_uncertain" | "method_deviation" | "physical_identity_uncertain" | "blocked";
-export type EquipmentCondition = "new_or_near_new" | "normal_used_condition" | "materially_worn" | "damaged" | "modified" | "unknown";
-export type InstrumentCalibrationStatus = "verified" | "operator_checked" | "unknown" | "not_applicable";
+export const physicalMeasurementEquipmentConditions = ["new_or_near_new", "normal_used_condition", "materially_worn", "damaged", "modified", "unknown"] as const;
+export type EquipmentCondition = typeof physicalMeasurementEquipmentConditions[number];
+export const physicalMeasurementInstrumentCalibrationStatuses = ["verified", "operator_checked", "unknown", "not_applicable"] as const;
+export type InstrumentCalibrationStatus = typeof physicalMeasurementInstrumentCalibrationStatuses[number];
 export type PhysicalVerificationConfidence = "confident" | "uncertain";
 export type PhysicalObservedQuantity = "mass" | "length" | "balance_point_distance" | "diameter" | "circumference";
 export type DiameterMethodSelection = "direct_caliper" | "circumference_derived";

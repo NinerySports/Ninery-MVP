@@ -5,7 +5,10 @@ import { PrismaGovernedSupportingContextProjectionRepository } from "./prisma-go
 import type { GovernedConstructEvidenceRepository, GovernedConstructEvidenceRequest, GovernedConstructEvidenceSnapshot, GovernedStrongerEvidence } from "./governed-construct-evidence-projection.js";
 
 export class PrismaGovernedConstructEvidenceProjectionRepository implements GovernedConstructEvidenceRepository {
-  constructor(private readonly client: PrismaClient | Prisma.TransactionClient, private readonly inSnapshot = false) {}
+  constructor(private readonly client: PrismaClient | Prisma.TransactionClient, private readonly inSnapshot = false) {
+    if (inSnapshot && "$transaction" in client) throw new Error("PROTECTED_SNAPSHOT_ROOT_CLIENT_REJECTED");
+    if (!inSnapshot && !("$transaction" in client)) throw new Error("PROTECTED_SNAPSHOT_TRANSACTION_REQUIRED");
+  }
 
   readSnapshot(request: GovernedConstructEvidenceRequest): Promise<GovernedConstructEvidenceSnapshot> {
     if (this.inSnapshot) return this.loadInSnapshot(request, this.client);
@@ -16,6 +19,8 @@ export class PrismaGovernedConstructEvidenceProjectionRepository implements Gove
   }
 
   private async loadInSnapshot(request: GovernedConstructEvidenceRequest, tx: Prisma.TransactionClient): Promise<GovernedConstructEvidenceSnapshot> {
+      const settings = await tx.$queryRaw<{ isolation: string; readOnly: string }[]>`SELECT current_setting('transaction_isolation') AS isolation, current_setting('transaction_read_only') AS "readOnly"`;
+      if (settings.length !== 1 || settings[0]?.isolation !== "repeatable read" || settings[0]?.readOnly !== "on") throw new Error("PROTECTED_SNAPSHOT_SETTINGS_REQUIRED");
       const equipment = await tx.equipment.findUnique({ where: { id: request.equipmentId }, select: { id: true, manufacturer: true, model: true, modelYear: true, certification: true } });
       if (!equipment) throw new Error("Equipment not found.");
       const variant = request.equipmentVariantId

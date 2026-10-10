@@ -86,7 +86,7 @@ test("calibration flags and verification cannot be silently omitted", () => {
 });
 
 test("repeat evaluator retains zero new independence and exact historical participation", () => {
-  const record = mutate({ evaluatorRelationship: "repeat_evaluator", independentSourceContribution: 0 });
+  const record = mutate({ evaluatorRelationship: "repeat_evaluator", independentSourceContribution: 0, evaluator: { ...(raw(calibrationCandidate()).evaluator as Record<string, unknown>), relationship: "repeat_evaluator" } });
   const prior = { ...calibrationCandidate(), id: "prior", sourceDate: "2026-09-01", sourceReference: "physical-bat-evaluation:1.1:prior:startup_demand", rawValue: { ...raw(calibrationCandidate()), sessionId: "prior" } };
   const result = run([record, prior]).find(item => item.evidenceRecordId === record.id)!;
   assert.equal(result.dependence.state, "repeat_evaluator");
@@ -172,4 +172,33 @@ test("stable ordering and explicit zero authority preserve input state", () => {
   assert.deepEqual(records, before);
   assert.deepEqual(run(records).map(item => item.evidenceRecordId), ["a", "z"]);
   assert.ok(run(records).every(item => Object.values(item.authority).every(value => value === false)));
+});
+
+for (const field of ["drySwingBlocks", "controlledContactBlocks", "contactLocationControls", "totalControlledContactTrials", "testingLimitations", "writerVersion"]) test(`missing human acquisition ${field} fails closed`, () => {
+  const result = run([mutate({ [field]: undefined })])[0]!;
+  assert.equal(result.disposition, "unresolved");
+  assert.equal(result.permittedAssessment, "none");
+  assert.equal(result.provenance.complete, false);
+});
+
+for (const [name, changes] of [
+  ["duplicate trial numbers", { trials: [1, 1, 1].map(trialNumber => ({ trialNumber, value: 570, repositioned: true })) }],
+  ["invalid trial number", { trials: [0, 2, 3].map(trialNumber => ({ trialNumber, value: 570, repositioned: true })) }],
+  ["missing instrument type", { instrument: { instrumentReference: "scale", calibrationStatus: "operator_checked" } }],
+  ["missing calibration status", { instrument: { instrumentReference: "scale", instrumentType: "digital_scale" } }],
+  ["incorrect reference points", { referencePoints: "uncontrolled" }],
+  ["legacy new condition alias", { equipmentCondition: "new" }],
+  ["modified without modifications", { equipmentCondition: "modified", modifications: [] }]
+] as const) test(`physical acquisition ${name} fails closed`, () => {
+  const record = measurementCandidate();
+  const result = run([{ ...record, rawValue: { ...raw(record), ...changes } }], { ...request, construct: "actual_mass" })[0]!;
+  assert.equal(result.disposition, "unresolved");
+  assert.equal(result.permittedAssessment, "none");
+  assert.equal(result.provenance.complete, false);
+});
+
+for (const condition of ["new_or_near_new", "normal_used_condition", "materially_worn", "modified", "damaged", "unknown"]) test(`authoritative physical condition ${condition}`, () => {
+  const record = measurementCandidate();
+  const result = run([{ ...record, rawValue: { ...raw(record), equipmentCondition: condition, modifications: condition === "modified" ? ["replacement grip"] : [] } }], { ...request, construct: "actual_mass" })[0]!;
+  assert.equal(result.disposition, ["damaged", "unknown"].includes(condition) ? "unresolved" : "admissible_with_restrictions");
 });
