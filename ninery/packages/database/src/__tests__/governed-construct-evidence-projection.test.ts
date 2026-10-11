@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { EquipmentDNAEvidenceItem } from "@ninery/equipment-intelligence";
+import { assessStrongerConstructEvidence } from "@ninery/equipment-intelligence";
+import { protocolCandidate } from "./stronger-evidence.fixture.js";
 import { GovernedConstructEvidenceProjectionService, type GovernedConstructEvidenceRepository, type GovernedStrongerEvidence } from "../governed-construct-evidence-projection.js";
 import type { GovernedSupportingContextEntry } from "../governed-supporting-context-projection.js";
 
@@ -19,18 +20,16 @@ function context(id: string, status: "current" | "historical", direction = "lowe
 }
 
 function evidence(id: string, status = "active", constructRole: GovernedStrongerEvidence["constructRole"] = "primary_candidate"): GovernedStrongerEvidence {
-  const item: EquipmentDNAEvidenceItem = { id, evidenceClass: "structured_human_evaluation", claimKey: "startup_demand",
-    recordAttributeKey: "startup_demand", knowledgeLevel: "variant", targetLevel: "variant", equipmentId: "equipment",
-    equipmentVariantId: "variant", method: "standardized_rubric", sourceName: "human", rawObservation: {},
-    limitations: [], independenceGroup: "evaluator-1", status };
-  return { ...item, sourceType: "structured_expert_evaluation", attributeDefinitionVersion: "1.0", constructRole };
+  const record = { ...protocolCandidate("equipment", "variant"), id, status };
+  const admissibility = assessStrongerConstructEvidence({ request, records: [record], variants: [{ id: "variant", equipmentId: "equipment" }] })[0]!;
+  return { ...admissibility.evidence!, sourceType: record.sourceType, attributeDefinitionVersion: "1.0", constructRole, admissibility };
 }
 
 function service(stronger: GovernedStrongerEvidence[], current: GovernedSupportingContextEntry[], historical: GovernedSupportingContextEntry[]) {
   let reads = 0;
   const repository: GovernedConstructEvidenceRepository = { async readSnapshot() {
     reads++;
-    return { stronger, supporting: { current, historical, semantics: "snapshot_at_read_time_not_historical_as_of" } };
+    return { stronger, admissibility: stronger.map(item => item.admissibility), supporting: { current, historical, semantics: "snapshot_at_read_time_not_historical_as_of" } };
   } };
   return { projection: new GovernedConstructEvidenceProjectionService(repository), reads: () => reads };
 }
@@ -53,8 +52,9 @@ test("stronger evidence preserves class, status, provenance and construct role",
   const subject = service([evidence("b"), evidence("a"), evidence("withdrawn", "withdrawn"), evidence("contextual", "active", "supporting_candidate")], [], []);
   const result = await subject.projection.load(request);
   assert.deepEqual(result.strongerEvidence.map(item => item.id), ["a", "b", "contextual"]);
-  assert.equal(result.directEvidenceRecordCount, 2);
-  assert.deepEqual(result.knownIndependentStrongerGroups, ["evaluator-1"]);
+  assert.equal(result.directEvidenceRecordCount, 0);
+  assert.deepEqual(result.knownIndependentStrongerGroups, []);
+  assert.ok(result.strongerEvidence.every(item => item.admissibility.permittedAssessment === "calibration_only"));
   assert.equal(result.strongerEvidence[0]?.evidenceClass, "structured_human_evaluation");
   assert.equal(result.strongerEvidence[0]?.attributeDefinitionVersion, "1.0");
   assert.deepEqual(result.excludedStrongerEvidence.map(item => item.id), ["withdrawn"]);
@@ -87,3 +87,41 @@ test("unsupported constructs fail before any repository read", async () => {
   await assert.rejects(() => subject.projection.load({ ...request, construct: "unknown_construct" }));
   assert.equal(subject.reads(), 0);
 });
+
+for (const kind of ["session", "specimen", "instrument", "upstream"] as const) {
+  test(`distinct evaluators sharing ${kind} do not establish independent stronger sources`, async () => {
+    const records = ["evaluator-a", "evaluator-b"].map((evaluator, index) => {
+      const record = protocolCandidate("equipment", "variant", `session-${index}`, evaluator);
+      assert.ok(record.rawValue && typeof record.rawValue === "object" && !Array.isArray(record.rawValue));
+      return { ...record, id: `record-${index}`, rawValue: { ...record.rawValue,
+        ...(kind === "session" ? { sessionId: "shared-session" } : {}),
+        ...(kind === "specimen" ? { specimenReference: "shared-specimen" } : {}),
+        ...(kind === "instrument" ? { instrument: { instrumentReference: "shared-instrument" } } : {}),
+        ...(kind === "upstream" ? { inputEvidenceReferences: ["shared-input"] } : {}) } };
+    });
+    const assessments = assessStrongerConstructEvidence({ request, records, variants: [{ id: "variant", equipmentId: "equipment" }] });
+    assert.ok(assessments.every(item => item.dependence.state === "independent_evaluator"));
+    assert.ok(assessments.every(item => item.dependence.relationships.some(relation => relation.kind === kind)));
+    // Exercise the direct-evidence branch independently of today's calibration-only gate.
+    const stronger: GovernedStrongerEvidence[] = assessments.map(item => ({ ...item.evidence!, sourceType: item.sourceType,
+      attributeDefinitionVersion: item.attributeDefinitionVersion, constructRole: "primary_candidate",
+      admissibility: { ...item, permittedAssessment: "construct_evidence" } }));
+    const result = await service(stronger, [], []).projection.load(request);
+    assert.equal(result.directEvidenceRecordCount, 2);
+    assert.deepEqual(result.knownIndependentStrongerGroups, []);
+    assert.deepEqual(result.strongerEvidenceAdmissibility.map(item => item.dependence), assessments.map(item => item.dependence));
+    assert.ok(Object.values(result.authority).every(value => value === false || value === 0));
+  });
+}
+
+for (const state of ["independent_evaluator", "repeat_evaluator", "unresolved"] as const) {
+  test(`${state} alone cannot populate stronger-source independence`, async () => {
+    const record = evidence("record");
+    const stronger = { ...record, admissibility: { ...record.admissibility, permittedAssessment: "construct_evidence" as const,
+      dependence: { ...record.admissibility.dependence, state, evaluatorGroup: "evaluator-only" } } };
+    const result = await service([stronger], [], []).projection.load(request);
+    assert.equal(result.directEvidenceRecordCount, 1);
+    assert.deepEqual(result.knownIndependentStrongerGroups, []);
+    assert.deepEqual(result.strongerEvidence[0]?.admissibility.dependence, stronger.admissibility.dependence);
+  });
+}

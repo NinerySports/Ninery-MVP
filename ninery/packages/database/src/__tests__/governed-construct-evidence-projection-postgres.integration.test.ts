@@ -8,6 +8,7 @@ import { PrismaGovernedSupportingContextBridgeRepository } from "../prisma-gover
 import { GovernedConstructEvidenceProjectionService } from "../governed-construct-evidence-projection.js";
 import { PrismaGovernedConstructEvidenceProjectionRepository } from "../prisma-governed-construct-evidence-projection-repository.js";
 import type { ReviewedSupportingInterpretation } from "../external-claim-review.js";
+import { protocolCandidate } from "./stronger-evidence.fixture.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const integration = url ? test : test.skip;
@@ -36,11 +37,12 @@ async function setup() {
 
 async function addEvidence(equipmentId: string, equipmentVariantId: string | undefined, source: "structured_expert_evaluation" | "other" = "structured_expert_evaluation") {
   assert.ok(db);
-  return db.equipmentDNAEvidenceRecord.create({ data: { equipmentId, equipmentVariantId, targetLevel: equipmentVariantId ? "variant" : "equipment",
-    attributeKey: "startup_demand", attributeDefinitionVersion: "1.0", sourceType: source, sourceName: "Disposable test evaluator",
-    sourceReference: `test:${randomUUID()}`, method: source === "other" ? "manual_review" : "standardized_rubric",
-    rawValue: { dimensionKey: "startup_demand", sessionId: randomUUID() }, normalizedValue: { value: "easy" },
-    evaluatorReference: "test-evaluator", status: "active" } });
+  const record = protocolCandidate(equipmentId, equipmentVariantId ?? (await db.equipmentVariant.findFirstOrThrow({ where: { equipmentId } })).id, randomUUID(), randomUUID());
+  return db.equipmentDNAEvidenceRecord.create({ data: { id: record.id, equipmentId, equipmentVariantId: record.equipmentVariantId,
+    targetLevel: equipmentVariantId ? "variant" : "equipment", attributeKey: record.attributeKey, attributeDefinitionVersion: "1.0",
+    sourceType: source, sourceName: record.sourceName, sourceReference: record.sourceReference, sourceDate: new Date(record.sourceDate!),
+    method: source === "other" ? "manual_review" : "standardized_rubric", rawValue: JSON.parse(JSON.stringify(record.rawValue)),
+    evaluatorReference: record.evaluatorReference, status: "active" } });
 }
 
 integration("#081 combines exact stronger evidence and governed context without writes or authority", async () => {
@@ -55,8 +57,10 @@ integration("#081 combines exact stronger evidence and governed context without 
   assert.deepEqual(result.strongerEvidence.map(item => item.id).sort(), [equipmentLevel.id, variantLevel.id].sort());
   assert.equal(result.strongerEvidence.some(item => item.id === otherEvidence.id), false);
   assert.ok(result.strongerEvidence.every(item => item.evidenceClass === "structured_human_evaluation"));
-  assert.equal(result.directEvidenceRecordCount, 2);
-  assert.deepEqual(result.knownIndependentStrongerGroups, ["test-evaluator"]);
+  assert.equal(result.directEvidenceRecordCount, 0);
+  assert.deepEqual(result.knownIndependentStrongerGroups, []);
+  assert.equal(result.strongerEvidenceAdmissibility.find(item => item.evidenceRecordId === otherEvidence.id)?.disposition, "excluded");
+  assert.ok(result.strongerEvidence.every(item => item.admissibility.permittedAssessment === "calibration_only"));
   assert.deepEqual(result.currentSupportingContext.map(item => item.decisionId), [f.decision.id]);
   assert.equal(result.currentSupportingContext[0]?.authority.directEvidenceContribution, 0);
   assert.equal(result.authority.synthesisEligibilityGranted, false);
@@ -138,13 +142,17 @@ integration("#081 unknown evidence source/method fails closed instead of becomin
   assert.ok(db);
   const f = await setup();
   await addEvidence(f.fixture.equipment.id, f.fixture.variant.id, "other");
-  await assert.rejects(() => f.projection.load(f.request), /Unclassifiable Equipment DNA evidence/);
+  const unknown = await f.projection.load(f.request);
+  assert.ok(unknown.strongerEvidenceAdmissibility.some(item => item.exclusions.includes("unsupported_source_type")));
+  assert.equal(unknown.strongerEvidence.length, 0);
   const instrument = await setup();
   await db.equipmentDNAEvidenceRecord.create({ data: { equipmentId: instrument.fixture.equipment.id,
     equipmentVariantId: instrument.fixture.variant.id, targetLevel: "variant", attributeKey: "startup_demand",
     attributeDefinitionVersion: "1.0", sourceType: "other", sourceName: "Ambiguous source",
     method: "instrument_measurement", status: "active" } });
-  await assert.rejects(() => instrument.projection.load(instrument.request), /Unclassifiable Equipment DNA evidence/);
+  const ambiguous = await instrument.projection.load(instrument.request);
+  assert.ok(ambiguous.strongerEvidenceAdmissibility.every(item => item.disposition === "excluded" && item.evidenceClass === undefined));
+  assert.equal(ambiguous.strongerEvidence.length, 0);
 
   const unrelated = await setup();
   await db.equipmentDNAEvidenceRecord.create({ data: { equipmentId: unrelated.fixture.equipment.id,
