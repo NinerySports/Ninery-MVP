@@ -16,3 +16,4 @@ export * from "./prisma-governed-supporting-context-projection-repository.js";
 export * from "./governed-construct-evidence-projection.js";
 export * from "./prisma-governed-construct-evidence-projection-repository.js";
 export * from "./atlas-usssa-production-ingestion.fixture.js";
+export * from "./governed-stronger-evidence-dependence-projection.js";

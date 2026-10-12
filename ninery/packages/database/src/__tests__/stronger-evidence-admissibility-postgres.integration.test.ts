@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { GovernedStrongerEvidenceDependenceProjectionService } from "../governed-stronger-evidence-dependence-projection.js";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { Prisma, PrismaClient } from "@prisma/client";
@@ -153,6 +154,24 @@ integration("#082 incomplete persisted acquisition remains visible but inadmissi
   assert.equal(result.strongerEvidenceAdmissibility[0]?.provenance.complete, false);
   assert.equal(result.strongerEvidenceAdmissibility[0]?.permittedAssessment, "none");
   assert.equal(result.currentSupportingContext[0]?.decisionId, f.support.id);
+});
+
+integration("#083 wrapper preserves coherent protected dependence and supporting context", async () => {
+  assert.ok(db);
+  const f = await setup();
+  await db.$transaction(async tx => {
+    await tx.$executeRaw`SET TRANSACTION READ ONLY`;
+    const wrapper = new GovernedStrongerEvidenceDependenceProjectionService(new PrismaGovernedConstructEvidenceProjectionRepository(tx, true));
+    const before = await wrapper.load(f.request);
+    assert.equal(before.dependence.nodes[0]?.participation, "assessment");
+    assert.equal(before.constructEvidence.directEvidenceRecordCount, 0);
+    await db!.equipmentDNAEvidenceRecord.update({ where: { id: f.evidence.id }, data: { status: "withdrawn" } });
+    await f.fixture.dependency();
+    assert.deepEqual(await wrapper.load(f.request), before);
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+  const after = await new GovernedStrongerEvidenceDependenceProjectionService(new PrismaGovernedConstructEvidenceProjectionRepository(db)).load(f.request);
+  assert.equal(after.dependence.nodes[0]?.participation, "context_only");
+  assert.equal(after.constructEvidence.currentSupportingContext.length, 0);
 });
 
 test.after(async () => { await db?.$disconnect(); });

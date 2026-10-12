@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { GovernedStrongerEvidenceDependenceProjectionService } from "../governed-stronger-evidence-dependence-projection.js";
 import test from "node:test";
 import { assessStrongerConstructEvidence } from "@ninery/equipment-intelligence";
 import { protocolCandidate } from "./stronger-evidence.fixture.js";
@@ -125,3 +126,12 @@ for (const state of ["independent_evaluator", "repeat_evaluator", "unresolved"] 
     assert.deepEqual(result.strongerEvidence[0]?.admissibility.dependence, stronger.admissibility.dependence);
   });
 }
+test("#083 wrapper uses one captured snapshot and preserves #081 counts", async () => {
+  let reads = 0;
+  const repository: GovernedConstructEvidenceRepository = { async readSnapshot() { reads++; return { stronger: [], admissibility: [], dependenceContext: [], supporting: { current: [], historical: [], semantics: "snapshot_at_read_time_not_historical_as_of" } }; } };
+  const result = await new GovernedStrongerEvidenceDependenceProjectionService(repository).load(request);
+  assert.equal(reads, 1);
+  assert.equal(result.constructEvidence.directEvidenceRecordCount, 0);
+  assert.deepEqual(result.constructEvidence.knownIndependentStrongerGroups, []);
+  assert.deepEqual(result.dependence.independentGroups, []);
+});

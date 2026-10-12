@@ -1,0 +1,10 @@
+import type { StrongerEvidenceAdmissibility, StrongerEvidenceCandidate, StrongerEvidenceRequest } from "../stronger-construct-evidence-admissibility.js";
+
+export const STRONGER_EVIDENCE_DEPENDENCE_VERSION = "1.0" as const;
+export type DependenceRelationshipKind = "shared_evaluator" | "shared_operator" | "shared_session" | "shared_specimen" | "shared_instrument" | "shared_upstream_reference" | "documented_upstream_link" | "same_acquisition_dimension";
+export type DependenceReason = "missing_provenance" | "malformed_provenance" | "conflicting_provenance" | "reference_namespace_unestablished" | "upstream_endpoint_unresolved" | "context_only_endpoint" | "scope_mismatch" | "source_independence_not_established" | "duplicate_identity_conflict";
+export type DependenceBasis = Readonly<{ recordId: string; fieldPath: string; reference: string }>;
+export type DependenceEdge = Readonly<{ from: string; to: string; kind: DependenceRelationshipKind; directed: boolean; basis: readonly DependenceBasis[]; participation: "assessment" | "context_only"; reasons: readonly DependenceReason[] }>;
+export type DependenceNode = Readonly<{ recordId: string; disposition?: StrongerEvidenceAdmissibility["disposition"]; evaluatorState: StrongerEvidenceAdmissibility["dependence"]["state"]; participation: "assessment" | "context_only"; sourceIndependence: "not_established"; reasons: readonly DependenceReason[] }>;
+export type StrongerEvidenceDependenceInput = Readonly<{ request: StrongerEvidenceRequest; assessments: readonly StrongerEvidenceAdmissibility[]; contextRecords: readonly StrongerEvidenceCandidate[] }>;
+export type StrongerEvidenceDependenceResult = Readonly<{ version: "1.0"; nodes: readonly DependenceNode[]; edges: readonly DependenceEdge[]; independentGroups: readonly []; authority: Readonly<{ independenceEstablished: false; sufficiencyGranted: false; comparabilityGranted: false; aggregationPerformed: false; canonicalValueCreated: false; numericValueCreated: false; synthesisGranted: false; compatibilityGranted: false; recommendationGranted: false; decisionBookGranted: false }> }>;
