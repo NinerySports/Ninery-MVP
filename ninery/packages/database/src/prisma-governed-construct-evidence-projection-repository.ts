@@ -52,6 +52,6 @@ export class PrismaGovernedConstructEvidenceProjectionRepository implements Gove
           .loadGovernedSupportingContext({ ...request, construct: request.construct })
         : { current: [], historical: [],
           semantics: "snapshot_at_read_time_not_historical_as_of" };
-      return { stronger, supporting, admissibility };
+      return { stronger, supporting, admissibility, dependenceContext: inputs };
   }
 }

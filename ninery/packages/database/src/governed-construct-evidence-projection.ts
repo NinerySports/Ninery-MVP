@@ -1,4 +1,4 @@
-import { equipmentDNAConstructEvidenceMap, type EquipmentDNAEvidenceItem, type StrongerEvidenceAdmissibility } from "@ninery/equipment-intelligence";
+import { equipmentDNAConstructEvidenceMap, type EquipmentDNAEvidenceItem, type StrongerEvidenceAdmissibility, type StrongerEvidenceCandidate } from "@ninery/equipment-intelligence";
 import type { GovernedSupportingContextEntry, GovernedSupportingContextProjection } from "./governed-supporting-context-projection.js";
 
 export const GOVERNED_CONSTRUCT_EVIDENCE_PROJECTION_VERSION = "1.0" as const;
@@ -13,6 +13,7 @@ export type GovernedConstructEvidenceSnapshot = {
   readonly stronger: readonly GovernedStrongerEvidence[];
   readonly supporting: Pick<GovernedSupportingContextProjection, "current" | "historical" | "semantics">;
   readonly admissibility: readonly StrongerEvidenceAdmissibility[];
+  readonly dependenceContext?: readonly StrongerEvidenceCandidate[];
 };
 
 export type GovernedStrongerEvidence = EquipmentDNAEvidenceItem & {
@@ -61,6 +62,11 @@ export class GovernedConstructEvidenceProjectionService {
       throw new Error("Unsupported equipment identity or construct.");
     }
     const snapshot = await this.repository.readSnapshot(request);
+    return composeGovernedConstructEvidenceProjection(request, snapshot);
+  }
+}
+
+export function composeGovernedConstructEvidenceProjection(request: GovernedConstructEvidenceRequest, snapshot: GovernedConstructEvidenceSnapshot): GovernedConstructEvidenceProjection {
     const sortEvidence = (a: GovernedStrongerEvidence, b: GovernedStrongerEvidence) =>
       a.evidenceClass.localeCompare(b.evidenceClass) || a.id.localeCompare(b.id);
     const admitted = (item: GovernedStrongerEvidence) => item.admissibility.disposition === "admissible" || item.admissibility.disposition === "admissible_with_restrictions";
@@ -88,7 +94,6 @@ export class GovernedConstructEvidenceProjectionService {
         synthesisEligibilityGranted: false, compatibilityAuthorityGranted: false, recommendationAuthorityGranted: false,
         decisionBookAuthorityGranted: false }
     };
-  }
 }
 
 function isString(value: string | undefined): value is string { return typeof value === "string" && value.length > 0; }
