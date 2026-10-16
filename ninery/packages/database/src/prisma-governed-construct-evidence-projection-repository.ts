@@ -48,7 +48,7 @@ export class PrismaGovernedConstructEvidenceProjectionRepository implements Gove
           sourceType: result.sourceType, constructRole: result.constructRole, admissibility: result }];
       });
       const supporting: Pick<GovernedSupportingContextProjection, "current" | "historical" | "semantics"> = request.construct === "startup_demand" || request.construct === "rotational_demand"
-        ? await new GovernedSupportingContextProjectionService(new PrismaGovernedSupportingContextProjectionRepository(tx, true))
+        ? await new GovernedSupportingContextProjectionService(await PrismaGovernedSupportingContextProjectionRepository.fromProtectedTransaction(tx))
           .loadGovernedSupportingContext({ ...request, construct: request.construct })
         : { current: [], historical: [],
           semantics: "snapshot_at_read_time_not_historical_as_of" };

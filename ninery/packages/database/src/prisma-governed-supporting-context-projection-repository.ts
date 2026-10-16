@@ -16,21 +16,75 @@ const rowArgs = Prisma.validator<Prisma.ExternalSupportingRoleDecisionFindManyAr
   }
 });
 type Row = Prisma.ExternalSupportingRoleDecisionGetPayload<typeof rowArgs>;
-type Client = PrismaClient | Prisma.TransactionClient;
+export class SupportingContextSnapshotError extends Error {
+  constructor(readonly code: string, options?: ErrorOptions) {
+    super(code, options);
+    this.name = "SupportingContextSnapshotError";
+  }
+}
+
+function requireTransaction(client: Prisma.TransactionClient): void {
+  if ("$transaction" in client) throw new SupportingContextSnapshotError("PROJECTION_ROOT_CLIENT_BORROW_REJECTED");
+  if (typeof client.$queryRaw !== "function") throw new SupportingContextSnapshotError("PROJECTION_TRANSACTION_CLIENT_REQUIRED");
+}
+
+async function verifySnapshot(client: Prisma.TransactionClient): Promise<void> {
+  requireTransaction(client);
+  let settings: unknown;
+  try {
+    settings = await client.$queryRaw`SELECT current_setting('transaction_isolation') AS isolation, current_setting('transaction_read_only') AS "readOnly"`;
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2028") throw error;
+    throw new SupportingContextSnapshotError("PROJECTION_SNAPSHOT_VERIFICATION_FAILED", { cause: error });
+  }
+  if (!Array.isArray(settings) || settings.length !== 1 || !settings[0] ||
+      typeof settings[0] !== "object" || settings[0].isolation !== "repeatable read" || settings[0].readOnly !== "on") {
+    throw new SupportingContextSnapshotError("PROJECTION_SNAPSHOT_SETTINGS_REQUIRED");
+  }
+}
+
+function isSnapshotFailure(error: unknown): boolean {
+  return error instanceof SupportingContextSnapshotError ||
+    (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2028");
+}
 
 export class PrismaGovernedSupportingContextProjectionRepository implements GovernedSupportingContextProjectionRepository {
-  constructor(private readonly client: Client, private readonly inSnapshot = false) {}
+  constructor(private readonly client: PrismaClient, ...unsupported: never[]) {
+    if (unsupported.length) throw new SupportingContextSnapshotError("PROJECTION_LEGACY_MARKER_REJECTED");
+    if (!("$transaction" in client) || typeof client.$transaction !== "function") {
+      throw new SupportingContextSnapshotError("PROJECTION_ROOT_CLIENT_REQUIRED");
+    }
+  }
+
+  static async fromProtectedTransaction(tx: Prisma.TransactionClient): Promise<GovernedSupportingContextProjectionRepository> {
+    await verifySnapshot(tx);
+    return new TransactionSupportingContextProjectionRepository(tx);
+  }
 
   readSnapshot<T>(operation: (repository: GovernedSupportingContextProjectionRepository) => Promise<T>): Promise<T> {
-    if (this.inSnapshot) return operation(this);
-    return (this.client as PrismaClient).$transaction(async tx => {
+    return this.client.$transaction(async tx => {
       await tx.$executeRaw`SET TRANSACTION READ ONLY`;
-      return operation(new PrismaGovernedSupportingContextProjectionRepository(tx, true));
+      const repository = await PrismaGovernedSupportingContextProjectionRepository.fromProtectedTransaction(tx);
+      return repository.readSnapshot(operation);
     }, { isolationLevel: "RepeatableRead", maxWait: 30000, timeout: 30000 });
   }
 
+  async load(_request: GovernedSupportingContextRequest): Promise<readonly GovernedSupportingContextEntry[]> {
+    throw new SupportingContextSnapshotError("PROJECTION_SNAPSHOT_REQUIRED");
+  }
+}
+
+// Only the verified factory exposes this adapter; every public read rechecks its transaction.
+class TransactionSupportingContextProjectionRepository implements GovernedSupportingContextProjectionRepository {
+  constructor(private readonly client: Prisma.TransactionClient) {}
+
+  async readSnapshot<T>(operation: (repository: GovernedSupportingContextProjectionRepository) => Promise<T>): Promise<T> {
+    await verifySnapshot(this.client);
+    return operation(this);
+  }
+
   async load(request: GovernedSupportingContextRequest): Promise<readonly GovernedSupportingContextEntry[]> {
-    if (!this.inSnapshot) throw new Error("PROJECTION_SNAPSHOT_REQUIRED");
+    await verifySnapshot(this.client);
     const variantFilter: Prisma.ExternalEvidenceIdentityAssertionWhereInput = request.equipmentVariantId
       ? { OR: [{ equipmentVariantId: null }, { equipmentVariantId: request.equipmentVariantId }] }
       : { equipmentVariantId: null };
@@ -87,6 +141,7 @@ export class PrismaGovernedSupportingContextProjectionRepository implements Gove
           }
         }
       } catch (error) {
+        if (isSnapshotFailure(error)) throw error;
         const reason = classify(error);
         if (reason === "claim_not_current" || reason === "review_not_current") {
           try {
@@ -98,7 +153,10 @@ export class PrismaGovernedSupportingContextProjectionRepository implements Gove
               else if (record?.reviewReady.supersessionReason === "document_revision") exclusions.push("source_or_document_not_current");
               else exclusions.push(reason);
             }
-          } catch { exclusions.push("durable_lineage_invalid"); }
+          } catch (error) {
+            if (isSnapshotFailure(error)) throw error;
+            exclusions.push("durable_lineage_invalid");
+          }
         } else exclusions.push(reason);
       }
     }
