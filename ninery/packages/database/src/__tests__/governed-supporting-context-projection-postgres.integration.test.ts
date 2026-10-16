@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { convergenceFixture } from "./reviewed-qualification.fixture.js";
 import { GovernedSupportingContextBridgeService, governedSupportingContextIdempotencyKey } from "../governed-supporting-context-bridge.js";
 import { PrismaGovernedSupportingContextBridgeRepository } from "../prisma-governed-supporting-context-bridge-repository.js";
@@ -195,3 +195,40 @@ integration("#080 one repeatable-read snapshot does not combine pre- and post-su
 });
 
 test.after(async () => { await db?.$disconnect(); });
+
+integration("#084 root marker, root borrowing and direct-load bypass are rejected", async () => {
+  assert.ok(db);
+  assert.throws(() => Reflect.construct(PrismaGovernedSupportingContextProjectionRepository, [db, true]), /PROJECTION_LEGACY_MARKER_REJECTED/);
+  await assert.rejects(PrismaGovernedSupportingContextProjectionRepository.fromProtectedTransaction(db), /PROJECTION_ROOT_CLIENT_BORROW_REJECTED/);
+  await assert.rejects(new PrismaGovernedSupportingContextProjectionRepository(db).load({ equipmentId: randomUUID(), construct: "startup_demand" }), /PROJECTION_SNAPSHOT_REQUIRED/);
+});
+for (const isolationLevel of [Prisma.TransactionIsolationLevel.ReadCommitted, Prisma.TransactionIsolationLevel.RepeatableRead]) {
+  for (const readOnly of [false, true]) {
+    if (isolationLevel === "RepeatableRead" && readOnly) continue;
+    integration(`#084 rejects ${isolationLevel} readOnly=${readOnly}`, async () => {
+      assert.ok(db);
+      await db.$transaction(async tx => {
+        if (readOnly) await tx.$executeRaw`SET TRANSACTION READ ONLY`;
+        assert.throws(() => Reflect.construct(PrismaGovernedSupportingContextProjectionRepository, [tx]), /PROJECTION_ROOT_CLIENT_REQUIRED/);
+        await assert.rejects(PrismaGovernedSupportingContextProjectionRepository.fromProtectedTransaction(tx), /PROJECTION_SNAPSHOT_SETTINGS_REQUIRED/);
+      }, { isolationLevel });
+    });
+  }
+}
+integration("#084 valid borrowed snapshot preserves results across committed successors and expires", async () => {
+  assert.ok(db);
+  const f = await ready();
+  const standalone = await f.projection.loadGovernedSupportingContext(f.request);
+  let borrowed: Awaited<ReturnType<typeof PrismaGovernedSupportingContextProjectionRepository.fromProtectedTransaction>> | undefined;
+  await db.$transaction(async tx => {
+    await tx.$executeRaw`SET TRANSACTION READ ONLY`;
+    borrowed = await PrismaGovernedSupportingContextProjectionRepository.fromProtectedTransaction(tx);
+    const service = new GovernedSupportingContextProjectionService(borrowed);
+    assert.deepEqual(await service.loadGovernedSupportingContext(f.request), standalone);
+    await f.fixture.dependency();
+    assert.deepEqual(await service.loadGovernedSupportingContext(f.request), standalone);
+  }, { isolationLevel: "RepeatableRead", timeout: 30000 });
+  assert.ok(borrowed);
+  await assert.rejects(borrowed.load(f.request), error => error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2028");
+  assert.equal((await f.projection.loadGovernedSupportingContext(f.request)).historical.length, 1);
+});
