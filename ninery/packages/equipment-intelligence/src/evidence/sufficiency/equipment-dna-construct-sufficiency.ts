@@ -20,11 +20,12 @@ export const equipmentDNAConstructSufficiencyProfiles: readonly EquipmentDNACons
   inverseSemantics: strategy.construct === "response_degradation" ? "Higher degradation means less forgiveness; readiness does not calculate a forgiveness value." : undefined
 }));
 
+/** Legacy simulation only: caller-supplied profiles and evaluator-derived counts are not operational authority. */
 export function assessEquipmentDNAConstructSynthesisReadiness(input: { readonly readModel: EquipmentDNAEvidenceReadModel; readonly profiles?: readonly EquipmentDNAConstructSufficiencyProfile[]; readonly crossEquipmentCalibrationState: EquipmentDNACrossEquipmentCalibrationState; readonly equipmentCoverageCount: number }): EquipmentDNASynthesisReadinessAssessment {
   const profiles = input.profiles ?? equipmentDNAConstructSufficiencyProfiles;
   const constructs = profiles.map((profile) => assess(profile, input.readModel, input.crossEquipmentCalibrationState));
   return {
-    version: EQUIPMENT_DNA_SYNTHESIS_READINESS_VERSION, evidenceReadModelVersion: input.readModel.version,
+    version: EQUIPMENT_DNA_SYNTHESIS_READINESS_VERSION, interpretation: "legacy_simulation_only", evidenceReadModelVersion: input.readModel.version,
     equipmentId: input.readModel.identity.equipmentId, equipmentVariantId: input.readModel.identity.variant?.id,
     crossEquipmentCalibrationState: input.crossEquipmentCalibrationState,
     protocolVersions: unique(input.readModel.evidenceByClass.structured_human_evaluation.map((item) => item.protocolVersion).filter(isString)),
