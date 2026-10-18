@@ -90,6 +90,7 @@ export type EquipmentDNAConstructSupport = {
 };
 
 export type EquipmentDNAEvidenceReadModel = {
+  readonly interpretation: "legacy_descriptive_inventory";
   readonly version: "1.0";
   readonly identity: EquipmentDNAEvidenceIdentity;
   readonly evidence: readonly EquipmentDNAEvidenceItem[];

@@ -17,3 +17,5 @@ export * from "./qualification/index.js";
 export * from "./calibration/index.js";
 export * from "./stronger-construct-evidence-admissibility.js";
 export * from "./dependence/index.js";
+
+export * from "./governed-operational-evidence-report.js";

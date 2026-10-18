@@ -50,6 +50,7 @@ export type EquipmentDNAConstructSufficiencyAssessment = {
 };
 
 export type EquipmentDNASynthesisReadinessAssessment = {
+  readonly interpretation: "legacy_simulation_only";
   readonly version: "1.0";
   readonly evidenceReadModelVersion: string;
   readonly equipmentId: string;

@@ -4,6 +4,7 @@ import type { EquipmentDNACatalogFactInput, EquipmentDNAConstructSupport, Equipm
 
 export const EQUIPMENT_DNA_EVIDENCE_READ_MODEL_VERSION = "1.0";
 
+/** Descriptive legacy inventory only. Use the governed operational report for applicability/readiness. */
 export function buildEquipmentDNAEvidenceReadModel(input: { readonly identity: EquipmentDNAEvidenceIdentity; readonly catalogFacts: readonly EquipmentDNACatalogFactInput[]; readonly records: readonly EquipmentDNAEvidenceRecordInput[] }): EquipmentDNAEvidenceReadModel {
   const catalog = input.catalogFacts.map((fact, index): EquipmentDNAEvidenceItem => ({
     id: `catalog:${fact.level}:${fact.key}:${index}`, evidenceClass: "verified_catalog_fact", claimKey: fact.key, recordAttributeKey: fact.key,
@@ -32,7 +33,7 @@ export function buildEquipmentDNAEvidenceReadModel(input: { readonly identity: E
     modeled_estimate: evidenceByClass.modeled_estimate.length
   };
   return {
-    version: EQUIPMENT_DNA_EVIDENCE_READ_MODEL_VERSION, identity: input.identity, evidence, evidenceByClass, evidenceClassCounts: counts,
+    version: EQUIPMENT_DNA_EVIDENCE_READ_MODEL_VERSION, interpretation: "legacy_descriptive_inventory", identity: input.identity, evidence, evidenceByClass, evidenceClassCounts: counts,
     missingEvidenceClasses: multiSourceEvidenceClassValues.filter((evidenceClass) => counts[evidenceClass] === 0),
     constructSupport: equipmentDNAConstructEvidenceMap.map((strategy) => constructSupport(strategy, evidence)),
     differences: describeCatalogSpecimenDifferences(evidence),
