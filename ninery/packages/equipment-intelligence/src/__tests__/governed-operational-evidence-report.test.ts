@@ -138,3 +138,17 @@ test("#085 different specimens and instruments do not establish independence eve
   assert.equal(result.constructs[0]!.admissibleConstructEvidence[0]!.value.kind, "numeric");
   assert.equal(result.constructs[0]!.readiness, "synthesis_not_permitted");
 });
+
+for (const current of [false, true]) test("#086 report distinguishes latest recorded from verified current provenance: " + current, () => {
+  const baseline = compose([human()]);
+  const reasons = current ? [] : ["registered_evidence_or_provenance_drift"];
+  const report = { ...baseline, provenance: [{ evidenceId: baseline.inventory[0]!.id, registration: "registered_declaration", latestRevisionId: "latest-revision", currentRevisionId: current ? "latest-revision" : null, reasons,
+    history: [{ revisionId: "latest-revision", operation: "correct", current, complete: current, consistent: current, reasons }] }] };
+  const output = formatGovernedOperationalEvidenceReport(report);
+  assert.match(output, /latest recorded revision latest-revision/);
+  assert.ok(output.includes("verified current revision " + (current ? "latest-revision" : "none")));
+  assert.ok(output.includes("; current " + current + ";"));
+  assert.deepEqual(report.constructs, baseline.constructs);
+  assert.deepEqual(report.authority, baseline.authority);
+  noIndependence(report);
+});

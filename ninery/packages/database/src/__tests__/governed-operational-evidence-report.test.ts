@@ -21,6 +21,7 @@ function clients() {
       async findMany() { calls.push("variants"); return [{ id: "variant", equipmentId: "equipment" }, { id: "other", equipmentId: "equipment" }]; }
     },
     equipmentDNAEvidenceRecord: { async findMany(args: unknown) { calls.push("evidence:" + JSON.stringify(args)); if (failure) throw failure; return [protocolCandidate("equipment", "variant")]; } },
+    acquisitionEvidenceBinding: { async findMany() { return []; } },
     externalSupportingRoleDecision: { async findMany() { calls.push("support"); return []; } }
   };
   const root = { async $transaction<T>(operation: (client: typeof tx) => Promise<T>, options: unknown) { calls.push("transaction:" + JSON.stringify(options)); return operation(tx); } } as unknown as PrismaClient;

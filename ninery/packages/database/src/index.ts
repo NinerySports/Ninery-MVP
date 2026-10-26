@@ -19,3 +19,7 @@ export * from "./atlas-usssa-production-ingestion.fixture.js";
 export * from "./governed-stronger-evidence-dependence-projection.js";
 
 export * from "./governed-operational-evidence-report.js";
+
+export * from "./acquisition-provenance.js";
+export * from "./stronger-evidence-acquisition-capture.js";
+export * from "./acquisition-provenance-projection.js";

@@ -1,3 +1,4 @@
+import type { readAcquisitionProvenanceInSnapshot } from "./acquisition-provenance-projection.js";
 import { assessStrongerEvidenceDependence, composeGovernedOperationalEvidenceReport, type EquipmentDNACatalogFactInput, type EquipmentDNAEvidenceIdentity, type StrongerEvidenceCandidate } from "@ninery/equipment-intelligence";
 import { composeGovernedConstructEvidenceProjection, type GovernedConstructEvidenceRequest, type GovernedConstructEvidenceSnapshot } from "./governed-construct-evidence-projection.js";
 
@@ -10,6 +11,7 @@ export type GovernedOperationalEvidenceSnapshot = {
   readonly identity: EquipmentDNAEvidenceIdentity;
   readonly catalogFacts: readonly EquipmentDNACatalogFactInput[];
   readonly inventory: readonly StrongerEvidenceCandidate[];
+  readonly provenance: Awaited<ReturnType<typeof readAcquisitionProvenanceInSnapshot>>;
   readonly constructs: readonly { readonly request: GovernedConstructEvidenceRequest; readonly snapshot: GovernedConstructEvidenceSnapshot }[];
 };
 export interface GovernedOperationalEvidenceRepository {

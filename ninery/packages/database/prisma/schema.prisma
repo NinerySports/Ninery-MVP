@@ -445,6 +445,8 @@ model GrowthMeasurement {
 }
 
 model Equipment {
+  acquisitions EvidenceAcquisition[]
+  acquisitionSpecimens AcquisitionParticipant[]
   id             String                 @id @default(uuid()) @db.Uuid
   manufacturer   String
   model          String
@@ -484,6 +486,8 @@ model Equipment {
 }
 
 model EquipmentVariant {
+  acquisitions EvidenceAcquisition[]
+  acquisitionSpecimens AcquisitionParticipant[]
   id           String   @id @default(uuid()) @db.Uuid
   equipmentId  String   @db.Uuid
   lengthInches Decimal? @db.Decimal(4, 1)
@@ -687,6 +691,8 @@ model EquipmentComparison {
 }
 
 model EquipmentDNAEvidenceRecord {
+  acquisitionBinding AcquisitionEvidenceBinding?
+  acquisitionInputs AcquisitionInputDeclaration[]
   id                         String                           @id @default(uuid()) @db.Uuid
   equipmentId                String?                          @db.Uuid
   equipmentVariantId         String?                          @db.Uuid
@@ -1799,4 +1805,121 @@ model ReferenceData {
   @@index([type])
   @@index([active])
   @@map("reference_data")
+}
+
+// #086: registered declarations, not independently verified identities.
+model CaptureNamespace {
+  id String @id
+  issuer String
+  version String @default("1.0")
+  participants AcquisitionParticipant[]
+  acquisitions EvidenceAcquisition[]
+  @@map("capture_namespaces")
+}
+model AcquisitionParticipant {
+  id String @id @db.Uuid
+  namespaceId String
+  kind String
+  localKey String
+  equipmentId String? @db.Uuid
+  equipmentVariantId String? @db.Uuid
+  registeredBy String
+  namespace CaptureNamespace @relation(fields:[namespaceId],references:[id],onDelete:Restrict)
+  equipment Equipment? @relation(fields:[equipmentId],references:[id],onDelete:Restrict)
+  variant EquipmentVariant? @relation(fields:[equipmentVariantId],references:[id],onDelete:Restrict)
+  specimenRevisions EvidenceAcquisitionRevision[] @relation("AcquisitionSpecimen")
+  operatorRevisions EvidenceAcquisitionRevision[] @relation("AcquisitionOperator")
+  evaluatorRevisions EvidenceAcquisitionRevision[] @relation("AcquisitionEvaluator")
+  instrumentMembers AcquisitionEvidenceMember[]
+  @@unique([namespaceId,kind,localKey])
+  @@map("acquisition_participants")
+}
+model EvidenceAcquisition {
+  id String @id @db.Uuid
+  namespaceId String
+  protocolFamily String
+  sessionKey String
+  equipmentId String @db.Uuid
+  equipmentVariantId String @db.Uuid
+  namespace CaptureNamespace @relation(fields:[namespaceId],references:[id],onDelete:Restrict)
+  equipment Equipment @relation(fields:[equipmentId],references:[id],onDelete:Restrict)
+  variant EquipmentVariant @relation(fields:[equipmentVariantId],references:[id],onDelete:Restrict)
+  revisions EvidenceAcquisitionRevision[]
+  bindings AcquisitionEvidenceBinding[]
+  @@unique([namespaceId,protocolFamily,sessionKey])
+  @@index([equipmentId,equipmentVariantId])
+  @@map("evidence_acquisitions")
+}
+model EvidenceAcquisitionRevision {
+  id String @id @db.Uuid
+  acquisitionId String @db.Uuid
+  ordinal Int
+  predecessorId String? @unique @db.Uuid
+  operation String
+  actorId String
+  idempotencyKey String @unique
+  commandFingerprint String
+  fingerprint String
+  fingerprintVersion String @default("1.0")
+  payload Json
+  expectedCount Int
+  sealed Boolean @default(false)
+  capturedAt DateTime @default(now())
+  specimenId String? @db.Uuid
+  operatorId String? @db.Uuid
+  evaluatorId String? @db.Uuid
+  acquisition EvidenceAcquisition @relation(fields:[acquisitionId],references:[id],onDelete:Restrict)
+  predecessor EvidenceAcquisitionRevision? @relation("AcquisitionSuccession",fields:[predecessorId,acquisitionId],references:[id,acquisitionId],onDelete:Restrict)
+  successors EvidenceAcquisitionRevision[] @relation("AcquisitionSuccession")
+  specimen AcquisitionParticipant? @relation("AcquisitionSpecimen",fields:[specimenId],references:[id],onDelete:Restrict)
+  operator AcquisitionParticipant? @relation("AcquisitionOperator",fields:[operatorId],references:[id],onDelete:Restrict)
+  evaluator AcquisitionParticipant? @relation("AcquisitionEvaluator",fields:[evaluatorId],references:[id],onDelete:Restrict)
+  members AcquisitionEvidenceMember[]
+  inputs AcquisitionInputDeclaration[] @relation("AcquisitionInputOwner")
+  inputTo AcquisitionInputDeclaration[] @relation("AcquisitionInputTarget")
+  @@unique([id,acquisitionId])
+  @@unique([acquisitionId,ordinal])
+  @@index([acquisitionId,ordinal(sort:Desc)])
+  @@map("evidence_acquisition_revisions")
+}
+model AcquisitionEvidenceBinding {
+  evidenceId String @id @db.Uuid
+  acquisitionId String @db.Uuid
+  evidence EquipmentDNAEvidenceRecord @relation(fields:[evidenceId],references:[id],onDelete:Restrict)
+  acquisition EvidenceAcquisition @relation(fields:[acquisitionId],references:[id],onDelete:Restrict)
+  members AcquisitionEvidenceMember[]
+  @@unique([evidenceId,acquisitionId])
+  @@index([acquisitionId])
+  @@map("acquisition_evidence_bindings")
+}
+model AcquisitionEvidenceMember {
+  revisionId String @db.Uuid
+  evidenceId String @db.Uuid
+  acquisitionId String @db.Uuid
+  memberKey String
+  fingerprint String
+  snapshot Json
+  instrumentId String? @db.Uuid
+  revision EvidenceAcquisitionRevision @relation(fields:[revisionId,acquisitionId],references:[id,acquisitionId],onDelete:Restrict)
+  binding AcquisitionEvidenceBinding @relation(fields:[evidenceId,acquisitionId],references:[evidenceId,acquisitionId],onDelete:Restrict)
+  instrument AcquisitionParticipant? @relation(fields:[instrumentId],references:[id],onDelete:Restrict)
+  @@id([revisionId,evidenceId])
+  @@unique([revisionId,memberKey])
+  @@index([evidenceId])
+  @@map("acquisition_evidence_members")
+}
+model AcquisitionInputDeclaration {
+  id String @id @db.Uuid
+  revisionId String @db.Uuid
+  kind String
+  evidenceId String? @db.Uuid
+  targetRevisionId String? @db.Uuid
+  declaration Json
+  revision EvidenceAcquisitionRevision @relation("AcquisitionInputOwner",fields:[revisionId],references:[id],onDelete:Restrict)
+  evidence EquipmentDNAEvidenceRecord? @relation(fields:[evidenceId],references:[id],onDelete:Restrict)
+  targetRevision EvidenceAcquisitionRevision? @relation("AcquisitionInputTarget",fields:[targetRevisionId],references:[id],onDelete:Restrict)
+  @@index([revisionId])
+  @@index([evidenceId])
+  @@index([targetRevisionId])
+  @@map("acquisition_input_declarations")
 }

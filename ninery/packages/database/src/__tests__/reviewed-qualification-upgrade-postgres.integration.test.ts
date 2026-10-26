@@ -24,7 +24,7 @@ integration("#078 populated seven-to-eight upgrade preserves historical NULL and
   assert.ok(url);
   const connection = new URL(url);
   assert.equal(connection.hostname, "127.0.0.1");
-  assert.ok(/ticket_07[89]/.test(connection.pathname) && connection.pathname.includes("disposable"), "Upgrade testing requires a disposable #078/#079 database");
+  assert.ok((/ticket_07[89]/.test(connection.pathname) && connection.pathname.includes("disposable")) || (connection.port === "55486" && /^\/ticket086_(empty|upgrade)_disposable$/.test(connection.pathname)), "Upgrade testing requires an explicitly disposable database");
   const databaseName = `ticket_078_upgrade_${randomUUID().replaceAll("-", "")}_disposable`;
   const admin = new PrismaClient({ datasources: { db: { url } } });
   await admin.$executeRawUnsafe(`CREATE DATABASE "${databaseName}"`);
@@ -41,9 +41,10 @@ integration("#078 populated seven-to-eight upgrade preserves historical NULL and
   writeFileSync(join(directory, "package.json"), '{"type":"module"}');
   cpSync(resolve(packageRoot, "node_modules/@prisma/client"), join(directory, "node_modules/@prisma/client"), { recursive: true, dereference: true });
   mkdirSync(join(directory, "migrations"));
-  const folders = readdirSync(currentMigrations).filter(name => /^\d/.test(name));
-  assert.equal(folders.length, 8);
   const eighth = "20260926000000_preserve_proposed_evidence_class";
+  // This historical seven-to-eight test intentionally excludes later migrations.
+  const folders = readdirSync(currentMigrations).filter(name => /^\d/.test(name) && name <= eighth);
+  assert.equal(folders.length, 8);
   for (const folder of folders.filter(name => name !== eighth)) cpSync(join(currentMigrations, folder), join(directory, "migrations", folder), { recursive: true });
   cpSync(join(currentMigrations, "migration_lock.toml"), join(directory, "migrations/migration_lock.toml"));
   const env = { ...process.env, DATABASE_URL: upgradeUrl, PRISMA_GENERATE_SKIP_AUTOINSTALL: "1" };
