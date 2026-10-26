@@ -128,6 +128,7 @@ export function reviewProtocolV11CalibrationSession(
   };
 }
 
+/** Legacy unbound repository seam. Operational commits use the database acquisition capture service. */
 export async function persistProtocolV11CalibrationSession(
   review: PhysicalEvaluationProtocolV11CalibrationReview,
   repository: PhysicalEvaluationProtocolV11CalibrationPersistenceRepository,

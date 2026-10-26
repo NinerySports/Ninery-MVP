@@ -1,3 +1,4 @@
+import { readAcquisitionProvenanceInSnapshot } from "./acquisition-provenance-projection.js";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { assessStrongerConstructEvidence, equipmentDNAConstructEvidenceMap, type EquipmentDNACatalogFactInput, type StrongerEvidenceCandidate } from "@ninery/equipment-intelligence";
 import { GovernedSupportingContextProjectionService, type GovernedSupportingContextProjection } from "./governed-supporting-context-projection.js";
@@ -35,7 +36,8 @@ export class PrismaGovernedConstructEvidenceProjectionRepository implements Gove
           modelYear: equipment.modelYear ?? undefined, certification: equipment.certification,
           variant: variant ? { id: variant.id, sku: variant.sku ?? undefined, lengthInches: numeric(variant.lengthInches),
             weightOunces: numeric(variant.weightOunces), dropWeight: variant.dropWeight ?? undefined } : undefined },
-        catalogFacts: catalogInventory(captured), inventory: captured.inputs, constructs: snapshots
+        catalogFacts: catalogInventory(captured), inventory: captured.inputs, constructs: snapshots,
+        provenance: await readAcquisitionProvenanceInSnapshot(tx,captured.rows)
       };
     });
   }
@@ -88,7 +90,7 @@ async function captureEvidence(request: GovernedConstructEvidenceRequest, tx: Pr
     normalizedValue: row.normalizedValue ?? undefined, unit: row.unit ?? undefined, notes: row.notes ?? undefined,
     status: row.status, evaluatorType: row.evaluatorType ?? undefined, evaluatorReference: row.evaluatorReference ?? undefined
   }));
-  return { equipment, variant, variants, inputs };
+  return { equipment, variant, variants, inputs, rows };
 }
 
 function numeric(value: unknown): number | undefined { if (value === null || value === undefined) return undefined; const number = Number(value); return Number.isFinite(number) ? number : undefined; }

@@ -22,6 +22,7 @@ export type GovernedOperationalEvidenceInput = {
   readonly catalogFacts: readonly EquipmentDNACatalogFactInput[];
   readonly inventory: readonly StrongerEvidenceCandidate[];
   readonly constructs: readonly GovernedOperationalConstructInput[];
+  readonly provenance?: readonly { readonly evidenceId:string; readonly registration:string; readonly latestRevisionId:string|null; readonly currentRevisionId:string|null; readonly reasons:readonly string[]; readonly history:readonly {readonly revisionId:string;readonly operation:string;readonly current:boolean;readonly complete:boolean;readonly consistent:boolean;readonly declaration?:unknown;readonly inputs?:readonly unknown[];readonly reasons:readonly string[]}[] }[];
 };
 
 /** Compose existing decisions only. Raw inventory and actor identities grant no authority. */
@@ -55,6 +56,7 @@ export function composeGovernedOperationalEvidenceReport(input: GovernedOperatio
     version: "1.0" as const, interpretation: "governed_operational_evidence" as const,
     semantics: "snapshot_at_read_time_not_historical_as_of" as const,
     identity: input.identity, catalogFacts: [...input.catalogFacts],
+    provenance: input.provenance ?? [],
     inventory, inventoryAuthority: "diagnostic_only" as const,
     unassessedInventoryIds: inventory.filter(record => !assessedIds.has(record.id)).map(record => record.id),
     constructs,
@@ -86,6 +88,8 @@ export function formatGovernedOperationalEvidenceReport(report: GovernedOperatio
       "  evaluator/operator " + (record.evaluatorReference ?? raw.operatorId ?? "unavailable") + "; session " + (raw.sessionId ?? raw.measurementSessionId ?? "unavailable") + "; specimen " + (raw.specimenReference ?? "unavailable") + "; instrument " + (object(raw.instrument).instrumentReference ?? "unavailable"),
       "  observed " + JSON.stringify(raw.observation ?? raw.trials ?? raw.aggregate ?? null) + "; normalized " + JSON.stringify(record.normalizedValue ?? null) + " " + (record.unit ?? "") + "; limitations " + JSON.stringify(raw.limitations ?? raw.testingLimitations ?? raw.sessionLimitations ?? []));
   }
+  lines.push("ACQUISITION PROVENANCE — registered declarations are not independently verified; no new authority");
+  for(const p of report.provenance) {lines.push("- "+p.evidenceId+": "+p.registration+"; latest recorded revision "+(p.latestRevisionId??"none")+"; verified current revision "+(p.currentRevisionId??"none")+"; "+p.reasons.join(", ")); for(const r of p.history) lines.push("  revision "+r.revisionId+"; "+r.operation+"; current "+r.current+"; complete "+r.complete+"; consistent "+r.consistent+"; "+r.reasons.join(", ")+"; declarations "+JSON.stringify(r.declaration??null)+"; inputs "+JSON.stringify(r.inputs??[]));}
   lines.push("Unassessed inventory IDs (diagnostic only): " + (report.unassessedInventoryIds.join(", ") || "none"));
   for (const item of report.constructs) {
     lines.push("CONSTRUCT " + item.construct, "State: " + item.descriptiveState + "; readiness: " + item.readiness,

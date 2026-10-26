@@ -1,3 +1,4 @@
+import { captureOperationalPacket } from "../../src/acquisition-capture-cli.js";
 import { readFile } from "node:fs/promises";
 import { Prisma } from "@prisma/client";
 import {
@@ -113,9 +114,8 @@ async function run(action: string, options: Record<string, string | boolean>) {
       console.log("Writes performed: no");
       return;
     }
-    const result = await persistProtocolV11CalibrationSession(review, createProtocolV11PersistenceRepository(), true);
-    console.log(`Created: ${result.created}`);
-    console.log(`Unchanged/idempotent: ${result.unchanged}`);
+    const receipt = await captureOperationalPacket(prisma,{protocol:"human_calibration",session},stringArg(options,"provenance"));
+    console.log("Acquisition revision: "+receipt.revisionId+"; current: "+receipt.current+"; replayed: "+receipt.replayed);
     console.log("Canonical evaluations created: 0");
     console.log("Numeric references created: 0");
     console.log("Recommendation behavior changed: no");
@@ -949,54 +949,6 @@ function printProtocolV11SessionReview(
   console.log(`Canonical writes planned: ${review.canonicalWritesPlanned}`);
   console.log(`Numeric references planned: ${review.numericReferencesPlanned}`);
   console.log(`Recommendation impact: ${review.recommendationImpact}`);
-}
-
-function createProtocolV11PersistenceRepository() {
-  return {
-    async persistPacketAtomically(records: readonly PhysicalEvaluationProtocolV11CalibrationEvidenceRecord[]) {
-      return prisma.$transaction(async (tx) => {
-        let created = 0;
-        let unchanged = 0;
-        for (const record of records) {
-          const existing = await tx.equipmentDNAEvidenceRecord.findUnique({ where: { id: record.id } });
-          if (existing) {
-            if (existing.sourceReference !== record.sourceReference || JSON.stringify(existing.rawValue) !== JSON.stringify(record.rawValue)) {
-              throw new Error(`Calibration evidence identity collision for ${record.sourceReference}; existing evidence is immutable.`);
-            }
-            unchanged += 1;
-            continue;
-          }
-          const sourceCollision = await tx.equipmentDNAEvidenceRecord.findFirst({ where: { sourceReference: record.sourceReference } });
-          if (sourceCollision) throw new Error(`Calibration source reference already belongs to ${sourceCollision.id}; no update was performed.`);
-          await tx.equipmentDNAEvidenceRecord.create({ data: calibrationEvidenceData(record) });
-          created += 1;
-        }
-        return { created, unchanged };
-      });
-    }
-  };
-}
-
-function calibrationEvidenceData(record: PhysicalEvaluationProtocolV11CalibrationEvidenceRecord): Prisma.EquipmentDNAEvidenceRecordUncheckedCreateInput {
-  return {
-    id: record.id,
-    equipmentId: record.equipmentId,
-    equipmentVariantId: record.equipmentVariantId,
-    targetLevel: "equipment",
-    attributeKey: record.attributeKey,
-    attributeDefinitionVersion: "1.0",
-    sourceType: "structured_expert_evaluation",
-    sourceName: "Ninery Physical Bat Evaluation Protocol v1.1 Calibration",
-    sourceReference: record.sourceReference,
-    sourceDate: new Date(record.evaluationDate),
-    method: "standardized_rubric",
-    rawValue: JSON.parse(JSON.stringify(record.rawValue)) as Prisma.InputJsonObject,
-    normalizedValue: undefined,
-    notes: "Protocol v1.1 calibration evidence only. Excluded from canonical evaluation, numeric references, recommendations, and genuine transition activation.",
-    status: "active",
-    evaluatorType: "staff",
-    evaluatorReference: record.evaluatorId
-  };
 }
 
 async function printProtocolV11PersistedEvidence(equipmentId: string) {

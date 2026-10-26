@@ -2,6 +2,7 @@ import { buildPhysicalMeasurementEvidence } from "./physical-measurement-protoco
 import { reviewPhysicalMeasurementSession } from "./physical-measurement-validation.js";
 import type { PhysicalMeasurementCatalogIdentity, PhysicalMeasurementPersistenceRepository, PhysicalMeasurementSession } from "./physical-measurement-protocol.types.js";
 
+/** Legacy unbound repository seam. Operational commits use the database acquisition capture service. */
 export async function persistPhysicalMeasurementSession(session: PhysicalMeasurementSession, repository: PhysicalMeasurementPersistenceRepository, confirmed: boolean, catalogIdentity?: PhysicalMeasurementCatalogIdentity) {
   const review = reviewPhysicalMeasurementSession(session, catalogIdentity);
   if (!confirmed) return { created: 0, unchanged: 0, writesPerformed: false as const, review };
